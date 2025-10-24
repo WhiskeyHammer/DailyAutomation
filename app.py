@@ -51,13 +51,15 @@ async def main():
         browser = await uc.start(config)
         print("✓ Connected to Chrome!")
         
-        # Your scraping code here
-        page = await browser.get('https://example.com')
-        print(f"✓ Page loaded: {page.url}")
-        
-        # Get page content or do your scraping
-        content = await page.get_content()
-        print(f"Page content length: {len(content)}")
+        page = await browser.get('https://news.google.com/home?hl=en-US&gl=US&ceid=US:en')
+
+        await page.save_screenshot()
+        await page.get_content()
+        await page.scroll_down(150)
+        elems = await page.xpath("//article/a")
+
+        for elem in elems:
+            print(elem.text)
         
         # DON'T await browser.stop() - it returns None
         # Just call it directly
