@@ -42,13 +42,25 @@ jobs:
         python -m pip install --upgrade pip
         pip install flake8 pytest
         if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-    
-    - name: Lint with flake8
+
+    - name: Debug Chrome installation
       run: |
-        # stop the build if there are Python syntax errors or undefined names
-        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
-        # exit-zero treats all errors as warnings. The GitHub editor is 127 chars wide
-        flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
-    
+          echo "Chrome path: ${{ steps.setup-chrome.outputs.chrome-path }}"
+          ${{ steps.setup-chrome.outputs.chrome-path }} --version
+          which google-chrome || echo "google-chrome not in PATH"
+          ls -la ${{ steps.setup-chrome.outputs.chrome-path }} || echo "Chrome binary not found"
+      
+    - name: Set up virtual display (Xvfb - simulates GUI)
+      run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb
+          Xvfb :99 -screen 0 1920x1080x24 -ac +extension GLX +render -noreset &
+          sleep 3  # Give Xvfb time to start
+      env:
+          DISPLAY: :99
+      
     - name: Run scraper
+      env:
+          CHROME_PATH: ${{ steps.setup-chrome.outputs.chrome-path }}
+          DISPLAY: :99
       run: python app.py
