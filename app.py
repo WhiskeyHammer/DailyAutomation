@@ -1,35 +1,69 @@
+import asyncio
 import nodriver as uc
 import os
-import asyncio
+import subprocess
 
 async def main():
     print("Starting browser...")
     print(f"DISPLAY: {os.environ.get('DISPLAY')}")
     print(f"CHROME_PATH: {os.environ.get('CHROME_PATH')}")
     
-    # Method 1: Use Config object (RECOMMENDED)
-    config = uc.Config()
-    config.browser_executable_path = os.environ.get('CHROME_PATH')
-    config.sandbox = False
-    config.add_argument('--disable-setuid-sandbox')
-    config.add_argument('--disable-dev-shm-usage')
-    config.add_argument('--disable-gpu')
-    config.add_argument('--no-first-run')
-    config.add_argument('--no-default-browser-check')
-    config.add_argument('--window-size=1920,1080')
-
-    browser = await uc.start(config)
-    page = await browser.get('https://news.google.com/home?hl=en-US&gl=US&ceid=US:en')
-
-    await page.save_screenshot()
-    await page.get_content()
-    await page.scroll_down(150)
-    elems = await page.xpath("//article/a")
-
-    for elem in elems:
-        print(elem.text)
+    chrome_path = os.environ.get('CHROME_PATH')
+    
+    # Test if Chrome can launch manually
+    print("\nTesting Chrome manually...")
+    try:
+        result = subprocess.run(
+            [chrome_path, '--version'],
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        print(f"Chrome version test: {result.stdout}")
+        print(f"Chrome stderr: {result.stderr}")
+    except Exception as e:
+        print(f"Chrome manual test failed: {e}")
+    
+    # Check if Chrome is executable
+    print(f"\nChrome file exists: {os.path.exists(chrome_path)}")
+    print(f"Chrome is executable: {os.access(chrome_path, os.X_OK)}")
+    
+    # Try with simpler config first
+    print("\nAttempting to start browser with nodriver...")
+    
+    try:
+        config = uc.Config()
+        config.browser_executable_path = chrome_path
+        config.sandbox = False
+        config.headless = False  # Use Xvfb display
+        
+        # Minimal args to start
+        config.add_argument('--disable-dev-shm-usage')
+        config.add_argument('--remote-debugging-port=9222')
+        
+        print(f"Config created. Attempting browser start...")
+        browser = await uc.start(config)
+        
+        print("Browser started successfully!")
+        
+        page = await browser.get('https://example.com')
+        print(f"Page loaded: {page.url}")
+        
+        await browser.stop()
+        
+    except Exception as e:
+        print(f"\nError starting browser: {e}")
+        import traceback
+        traceback.print_exc()
+        
+        # Try without specifying path (let nodriver find Chrome)
+        print("\n\nAttempting fallback: letting nodriver find Chrome...")
+        try:
+            browser = await uc.start(sandbox=False)
+            print("Fallback succeeded!")
+            await browser.stop()
+        except Exception as e2:
+            print(f"Fallback also failed: {e2}")
 
 if __name__ == '__main__':
-
-    # since asyncio.run never worked (for me)
     uc.loop().run_until_complete(main())
