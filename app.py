@@ -1,8 +1,8 @@
 import nodriver as uc
 
 async def main():
-
-    browser = await uc.start()
+    sandbox = False
+    browser = await uc.start(no_sandbox=True)
     page = await browser.get('https://news.google.com/home?hl=en-US&gl=US&ceid=US:en')
 
     await page.save_screenshot()
