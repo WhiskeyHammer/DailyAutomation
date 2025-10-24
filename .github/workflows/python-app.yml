@@ -63,4 +63,4 @@ jobs:
       env:
           CHROME_PATH: ${{ steps.setup-chrome.outputs.chrome-path }}
           DISPLAY: :99
-      run: python scraper.py
+      run: python app.py
