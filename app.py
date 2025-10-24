@@ -10,7 +10,7 @@ async def main():
     # Method 1: Use Config object (RECOMMENDED)
     config = uc.Config()
     config.browser_executable_path = os.environ.get('CHROME_PATH')
-    config.add_argument('--no-sandbox')
+    config.sandbox = False
     config.add_argument('--disable-setuid-sandbox')
     config.add_argument('--disable-dev-shm-usage')
     config.add_argument('--disable-gpu')
