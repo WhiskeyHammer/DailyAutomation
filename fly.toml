@@ -1,0 +1,10 @@
+app = 'dailyautomation'
+primary_region = 'iad'
+
+[build]
+
+# This section configures the machine size
+[[vm]]
+  cpu_kind = 'shared'
+  cpus = 1
+  memory_mb = 256  # Set to 256 to stay in the Free Tier
