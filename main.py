@@ -1,7 +1,5 @@
 import asyncio
 import nodriver as uc
-import sys
-import os
 import random
 
 # Configuration
