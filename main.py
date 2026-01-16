@@ -2,10 +2,10 @@ import asyncio
 import nodriver as uc
 import sys
 import os
+import random
 
 # Configuration
 TARGET_URL = "https://workout-tracker-hxg5.onrender.com/"
-CHECK_INTERVAL = 60  # Seconds
 
 async def check_site():
     browser = None
@@ -44,8 +44,9 @@ async def run_loop():
     print("Starting Monitoring Service...")
     while True:
         await check_site()
-        print(f"Sleeping for {CHECK_INTERVAL} seconds...")
-        await asyncio.sleep(CHECK_INTERVAL)
+        check_interval = random.randint(60, 180)
+        print(f"Sleeping for {check_interval} seconds...")
+        await asyncio.sleep(check_interval)
 
 if __name__ == '__main__':
     # nodriver standard loop
