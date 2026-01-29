@@ -1,11 +1,24 @@
 import asyncio
 import nodriver as n
 import csv
+import logging
 from lxml import html
 
 # --- 1. CONFIGURATION & XPATH SELECTORS ---
 START_URL = "https://duval.realtaxdeed.com/index.cfm?zaction=AUCTION&Zmethod=PREVIEW&AUCTIONDATE=01/15/2025"
 OUTPUT_FILE = "duval_sales_strict_2025.csv"
+LOG_FILE = "tax_sale_scrape.log"
+
+# --- Configure Logging ---
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler(LOG_FILE, mode='w', encoding='utf-8'),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
 
 # --- XPath Selectors High Level Page Items ---
 XP_AUCTION_DATE     = '//div[contains(@class, "BLHeaderDateDisplay")]'
@@ -23,7 +36,7 @@ XP_ASSESSED_VALUE = './/tr[./td[text()="Assessed Value:"]]/td[2]'
 XP_OPENING_BID = './/tr[./td[text()="Opening Bid:"]]/td[2]'
 XP_PARCEL_ID = './/tr[./td[text()="Parcel ID:"]]/td[2]/a'
 XP_CURRENT_PAGE = '//input[@id="curPCA"]'
-XP_FINAL_PAGE = '//input[@id="maxCA"]'
+XP_FINAL_PAGE = '//span[@id="maxCA"]'
 
 # Item inner detail selectors (relative to item)
 XP_ITEM_LINK        = './/a[contains(@href, "Detail.aspx")]'
@@ -59,13 +72,10 @@ async def step_check_stop_condition(tab):
 
 async def step_get_date(tab):
     """Extracts the date string from the header."""
-    try:
-        date_els = await tab.xpath(XP_AUCTION_DATE)
-        if date_els and len(date_els) > 0:
-            return date_els[0].text.strip()
-    except Exception as e:
-        raise ElementMissingError(f"Could not find auction date element: {e}")
-    raise ElementMissingError("Could not find auction date element")
+    date_els = await tab.xpath(XP_AUCTION_DATE)
+    if not date_els or len(date_els) == 0:
+        raise ElementMissingError("Could not find auction date element")
+    return date_els[0].text.strip()
 
 async def step_extract_items(tab, current_date, writer, file_handle):
     """Finds all items on current view, parses them, writes to CSV."""
@@ -108,20 +118,47 @@ async def step_extract_items(tab, current_date, writer, file_handle):
             file_handle.flush()
 
         except Exception as e:
-            print(f"   Error parsing item: {e}")
+            logger.error(f"   Error parsing item: {e}")
             continue
 
 async def step_next_page_of_items(tab):
-    """Looks for a pagination 'Next' button and clicks it."""
+    """Looks for a pagination 'Next' button and clicks it if not on the last page."""
     try:
+        # Get total number of pages from XP_FINAL_PAGE (span text)
+        final_page_els = await tab.xpath(XP_FINAL_PAGE)
+        if not final_page_els or len(final_page_els) == 0:
+            raise ElementMissingError("Could not find max page element (XP_FINAL_PAGE)")
+        total_pages = int(final_page_els[0].text.strip())
+        
+        # Get current page - use apply() to get fresh attribute from DOM
+        current_page_els = await tab.xpath(XP_CURRENT_PAGE)
+        if not current_page_els or len(current_page_els) == 0:
+            raise ElementMissingError("Could not find current page element (XP_CURRENT_PAGE)")
+        current_page = int(await current_page_els[0].apply("(el) => el.getAttribute('curpg') || '1'"))
+        
+        logger.info(f"   Page {current_page} of {total_pages}")
+        
+        # Only click next if we're not on the last page
+        if current_page >= total_pages:
+            return False
+        
         next_btns = await tab.xpath(XP_NEXT_PAGE_BTN)
         if next_btns and len(next_btns) > 0:
-            print("   -> Clicking Next Page (Inner)...")
+            logger.info("   -> Clicking Next Page (Inner)...")
             await next_btns[0].click()
-            await asyncio.sleep(3)
+            
+            # Wait for the page number to actually change using apply() for fresh values
+            expected_page = current_page + 1
+            for _ in range(30):  # Max 30 attempts, ~15 seconds total
+                await asyncio.sleep(0.5)
+                current_page_els = await tab.xpath(XP_CURRENT_PAGE)
+                if current_page_els and len(current_page_els) > 0:
+                    new_page = int(await current_page_els[0].apply("(el) => el.getAttribute('curpg') || '1'"))
+                    if new_page >= expected_page:
+                        break
             return True
-    except Exception:
-        pass
+    except Exception as e:
+        logger.error(f"   Error in pagination: {e}")
     return False
 
 async def step_next_auction_date(tab):
@@ -129,9 +166,23 @@ async def step_next_auction_date(tab):
     try:
         next_date_btns = await tab.xpath(XP_NEXT_DATE_BTN)
         if next_date_btns and len(next_date_btns) > 0:
-            print("Moving to Next Auction Date...")
+            # Get current date before clicking
+            current_date = None
+            date_els = await tab.xpath(XP_AUCTION_DATE)
+            if date_els and len(date_els) > 0:
+                current_date = date_els[0].text.strip()
+            
+            logger.info("Moving to Next Auction Date...")
             await next_date_btns[0].click()
-            await asyncio.sleep(4)
+            
+            # Wait for the date to change (indicating new page loaded)
+            for _ in range(20):  # Max 20 attempts, ~10 seconds total
+                await asyncio.sleep(0.5)
+                date_els = await tab.xpath(XP_AUCTION_DATE)
+                if date_els and len(date_els) > 0:
+                    new_date = date_els[0].text.strip()
+                    if new_date != current_date:
+                        break
             return True
     except Exception:
         pass
@@ -155,18 +206,18 @@ async def main():
         writer = csv.writer(f)
         writer.writerow(["Date", "Parcel ID", "Address", "Sale Amount", "Assessed Value", "Opening Bid", "Link"])
         
-        print(f"Scraper Initialized. Output: {OUTPUT_FILE}")
+        logger.info(f"Scraper Initialized. Output: {OUTPUT_FILE}")
 
         while True:
             # A. Check Stop Condition
             should_stop = await step_check_stop_condition(tab)
             if should_stop:
-                print("Hit 'Auctions Waiting'. No more closed sales. Stopping.")
+                logger.info("Hit 'Auctions Waiting'. No more closed sales. Stopping.")
                 break
 
             # B. Get Date
             date_str = await step_get_date(tab)
-            print(f"Processing Date: {date_str}")
+            logger.info(f"Processing Date: {date_str}")
 
             # C. Inner Loop: Items & Pagination
             while True:
@@ -179,11 +230,11 @@ async def main():
             # D. Outer Loop: Next Date
             has_next_date = await step_next_auction_date(tab)
             if not has_next_date:
-                print("No 'Next Auction' button found. Process complete.")
+                logger.info("No 'Next Auction' button found. Process complete.")
                 break
 
-    print("Scraping complete!")
-    await browser.stop()
+    logger.info("Scraping complete!")
+    browser.stop()
 
 if __name__ == '__main__':
     n.loop().run_until_complete(main())
