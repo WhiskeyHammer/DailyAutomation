@@ -12,7 +12,7 @@ XP_AUCTION_DATE     = '//div[contains(@class, "BLHeaderDateDisplay")]'
 XP_AUCTION_ITEMS    = '//div[contains(@class, "AUCTION_ITEM") and contains(@class, "PREVIEW")]'
 XP_MSG_WAITING      = '//div[contains(@class, "Sub_Title") and contains(text(), "Auctions Waiting")]'
 XP_MSG_CLOSED       = '//div[contains(@class, "Sub_Title") and contains(text(), "Auctions Closed")]'
-XP_NEXT_PAGE_BTN    = '//span[contains(@class, "PageRight")]'
+XP_NEXT_PAGE_BTN    = '(//div[./div[contains(text(),"Auctions Closed or Canceled")]]//span[contains(@class, "PageRight")])[1]'
 XP_NEXT_DATE_BTN    = '//a[contains(text(), "Next Auction")]'
 
 # --- XPath Selectors Auction Items ---
@@ -22,6 +22,8 @@ XP_SALE_AMOUNT = './/div[@class="ASTAT_MSGD Astat_DATA"]'
 XP_ASSESSED_VALUE = './/tr[./td[text()="Assessed Value:"]]/td[2]'
 XP_OPENING_BID = './/tr[./td[text()="Opening Bid:"]]/td[2]'
 XP_PARCEL_ID = './/tr[./td[text()="Parcel ID:"]]/td[2]/a'
+XP_CURRENT_PAGE = '//input[@id="curPCA"]'
+XP_FINAL_PAGE = '//input[@id="maxCA"]'
 
 # Item inner detail selectors (relative to item)
 XP_ITEM_LINK        = './/a[contains(@href, "Detail.aspx")]'
@@ -101,7 +103,9 @@ async def step_extract_items(tab, current_date, writer, file_handle):
             parcel_id = parcel_id_raw.text_content().strip()
             parcel_link = parcel_id_raw.get('href')
 
-            # Send address, sale_amount, assessed_value, opening_bid, parcel_id, parcel_link to the csv
+            # Write to CSV
+            writer.writerow([current_date, parcel_id, address, sale_amount, assessed_value, opening_bid, parcel_link])
+            file_handle.flush()
 
         except Exception as e:
             print(f"   Error parsing item: {e}")
@@ -149,7 +153,7 @@ async def main():
 
     with open(OUTPUT_FILE, 'w', newline='', encoding='utf-8') as f:
         writer = csv.writer(f)
-        writer.writerow(["Date", "Parcel ID", "Address", "Sale Amount", "Assessed Value", "Link"])
+        writer.writerow(["Date", "Parcel ID", "Address", "Sale Amount", "Assessed Value", "Opening Bid", "Link"])
         
         print(f"Scraper Initialized. Output: {OUTPUT_FILE}")
 
