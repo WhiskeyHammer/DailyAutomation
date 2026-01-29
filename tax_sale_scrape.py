@@ -9,8 +9,8 @@ from datetime import datetime
 # --- 1. CONFIGURATION & XPATH SELECTORS ---
 CALENDAR_URL = "https://duval.realtaxdeed.com/index.cfm?zaction=user&zmethod=calendar&selCalDate=%7Bts%20%272025%2D01%2D01%2000%3A00%3A00%27%7D"
 AUCTION_URL_TEMPLATE = "https://duval.realtaxdeed.com/index.cfm?zaction=AUCTION&Zmethod=PREVIEW&AUCTIONDATE={date}"
-OUTPUT_FILE = "duval_sales_strict_2025.csv"
-LOG_FILE = "tax_sale_scrape.log"
+OUTPUT_FILE = f"duval_sales_{datetime.now().strftime('%Y-%m-%d')}.csv"
+LOG_FILE = f"tax_sale_scrape_{datetime.now().strftime('%Y-%m-%d')}.log"
 
 # --- Configure Logging ---
 logging.basicConfig(
