@@ -8,7 +8,7 @@ from datetime import datetime
 # --- 1. CONFIGURATION & VARIABLES ---
 
 INPUT_CSV   = "tax_sales_2026-01-29.csv"
-OUTPUT_FILE = "duval_assessment_and_flips.csv"
+OUTPUT_FILE = "clay_assessment_and_flips.csv"
 
 # --- DEVELOPMENT OVERRIDE ---
 # Format: ("URL", "Date", "Price", "Parcel ID")
@@ -16,22 +16,25 @@ OUTPUT_FILE = "duval_assessment_and_flips.csv"
 # Set to a tuple to ignore CSV and run just this one case.
 TEST_OVERRIDE = None
 # Example:
-# TEST_OVERRIDE = ("https://paopropertysearch.coj.net/Basic/Detail.aspx?RE=1062010010", "Wednesday September 10, 2025", "$141,100.00", "106201-0010")
+# TEST_OVERRIDE = ("https://qpublic.schneidercorp.com/Application.aspx?AppID=830&LayerID=15008&PageTypeID=4&PageID=6756&Q=1434770174&KeyValue=19-08-24-007802-044-00", "Wednesday November 19, 2025", "$18,900", "19-08-24-007802-044-00")
 
 # Filter Settings
-TARGET_COUNTY = "Duval"
+TARGET_COUNTY = "Clay"
 
-# XPath Targets (Duval Specific)
-XP_VAL_BUILDING      = '(//span[contains(@id,"BuildingValue")])[2]' 
-XP_VAL_LAND          = '(//span[contains(@id,"LandValueMarket")])[2]' 
-XP_SALES_TABLE_ROWS  = '//table[contains(@id, "gridSales")]//tr[position()>1]'
+# XPath Targets (Clay County Specific - qpublic.schneidercorp.com)
+# Valuation table - get Building Value and Land Value from the 2025 Certified column
+XP_VAL_BUILDING = '//table[contains(@class,"table")]//tr[contains(.,"Building Value")]/td[2]'
+XP_VAL_LAND = '//table[contains(@class,"table")]//tr[contains(.,"Land Value") and not(contains(.,"Agricultural"))]/td[2]'
 
-# Relative XPaths
-XP_SALE_DATE         = './td[2]'
-XP_SALE_PRICE        = './td[3]'
-XP_DEED_TYPE         = './td[4]'
-XP_QUALIFIED         = './td[5]'
-XP_VACANT_IMP        = './td[6]'
+# Sales table rows (skip header row)
+XP_SALES_TABLE_ROWS = '//table[caption[contains(text(),"Sales")]]//tbody/tr'
+
+# Relative XPaths for sales table columns
+XP_SALE_DATE = './th[1]'  # First column is rowheader with date
+XP_SALE_PRICE = './td[1]'  # Sale Price
+XP_DEED_TYPE = './td[2]'   # Instrument
+XP_QUALIFIED = './td[5]'   # Sale Qualification
+XP_VACANT_IMP = './td[8]'  # Vacant or Improved
 
 # --- 2. HELPERS ---
 
@@ -40,7 +43,8 @@ def parse_date(date_str):
     formats = [
         "%A %B %d, %Y",  # Long: Wednesday September 10, 2025
         "%m/%d/%Y",      # Short: 09/10/2025
-        "%Y-%m-%d"       # ISO: 2025-09-10
+        "%Y-%m-%d",      # ISO: 2025-09-10
+        "%d/%m/%Y",      # European: 10/09/2025
     ]
     for fmt in formats:
         try:
@@ -65,7 +69,7 @@ async def parse_and_filter_flips(page_html, input_url, input_date_str, input_pri
     target_date = parse_date(input_date_str)
     target_price_clean = clean_price(input_price_str)
     
-    # B. Extract 2025 Values (Fix: Get Text Content from List)
+    # B. Extract 2025 Values
     b_nodes = tree.xpath(XP_VAL_BUILDING)
     building_val = b_nodes[0].text_content().strip() if b_nodes else "N/A"
     
@@ -99,11 +103,11 @@ async def parse_and_filter_flips(page_html, input_url, input_date_str, input_pri
 
                 record = [
                     input_url,
-                    input_parcel_id,   # ADDED
+                    input_parcel_id,
                     input_date_str, 
                     input_price_str, 
-                    building_val,      # FIXED
-                    land_val,          # FIXED
+                    building_val,
+                    land_val,
                     hist_date_str, 
                     hist_price_str, 
                     hist_deed, 
@@ -116,11 +120,11 @@ async def parse_and_filter_flips(page_html, input_url, input_date_str, input_pri
     if not found_flips:
         record = [
             input_url,
-            input_parcel_id,   # ADDED
+            input_parcel_id,
             input_date_str, 
             input_price_str, 
-            building_val,      # FIXED
-            land_val,          # FIXED
+            building_val,
+            land_val,
             "N/A", "N/A", "N/A", "N/A", "N/A"
         ]
         found_flips.append(record)
@@ -138,13 +142,13 @@ async def main():
     if TEST_OVERRIDE:
         print(f"\n!!! USING TEST OVERRIDE MODE !!!")
         print(f"Target: {TEST_OVERRIDE[0]}\n")
-        tasks.append(TEST_OVERRIDE) # Override tuple must now have 4 items
+        tasks.append(TEST_OVERRIDE)
     else:
         if os.path.exists(INPUT_CSV):
             with open(INPUT_CSV, 'r', encoding='utf-8-sig') as f:
                 reader = csv.DictReader(f)
                 
-                required_cols = ['Link', 'Date', 'Sale Amount', 'County', 'Parcel ID'] # Added Parcel ID req
+                required_cols = ['Link', 'Date', 'Sale Amount', 'County', 'Parcel ID']
                 if not all(col in reader.fieldnames for col in required_cols):
                     print(f"Error: CSV missing columns. Found: {reader.fieldnames}")
                     return
@@ -157,7 +161,7 @@ async def main():
                     url = row.get('Link')
                     date = row.get('Date')
                     price = row.get('Sale Amount')
-                    pid = row.get('Parcel ID', 'N/A') # Extract Parcel ID
+                    pid = row.get('Parcel ID', 'N/A')
                     
                     if url and url != "N/A":
                         tasks.append((url, date, price, pid))
@@ -176,25 +180,34 @@ async def main():
             "FLIP Date", "FLIP Price", "Instrument", "Qualified", "Vacant/Imp"
         ])
 
-        for url, date, price, pid in tasks: # Unpack 4 args
+        for url, date, price, pid in tasks:
             print(f"Processing: {url}")
             
             try:
                 page = await browser.get(url)
                 
+                # Wait for the page to load - look for the Valuation section
                 try:
-                    await page.wait_for("#propValue")
-                    await asyncio.sleep(1) 
+                    await page.wait_for("Valuation", timeout=15)
+                    await asyncio.sleep(2)  # Extra time for dynamic content
                 except:
-                    print("  -> Page load failed")
+                    print("  -> Page load failed or timeout")
                     continue
+
+                # Handle the Terms and Conditions dialog if it appears
+                try:
+                    agree_btn = await page.select("button:contains('Agree')")
+                    if agree_btn:
+                        await agree_btn.click()
+                        await asyncio.sleep(1)
+                except:
+                    pass  # Dialog might not appear
 
                 content = await page.get_content()
                 
-                # Pass pid to parser
                 results = await parse_and_filter_flips(content, url, date, price, pid)
 
-                has_flips = any(r[6] != "N/A" for r in results) # Check index 6 (Flip Date)
+                has_flips = any(r[6] != "N/A" for r in results)
                 
                 if has_flips:
                     print(f"  -> FOUND {len(results)} NEW SALE(S)!")
