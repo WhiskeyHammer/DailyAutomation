@@ -8,33 +8,58 @@ from datetime import datetime
 # --- 1. CONFIGURATION & VARIABLES ---
 
 INPUT_CSV   = "tax_sales_2026-01-29.csv"
-OUTPUT_FILE = "duval_assessment_and_flips.csv" # Renamed slightly to reflect content
+OUTPUT_FILE = "duval_assessment_and_flips.csv"
+
+# --- DEVELOPMENT OVERRIDE ---
+# Format: ("URL", "Date", "Price")
+# Set to None to run the full CSV. 
+# Set to a tuple to ignore CSV and run just this one case.
+TEST_OVERRIDE = None
+# Example:
+# TEST_OVERRIDE = ("https://paopropertysearch.coj.net/Basic/Detail.aspx?RE=1062010010", "Wednesday September 10, 2025", "$141,100.00 ")
 
 # Filter Settings
 TARGET_COUNTY = "Duval"
 
 # XPath Targets (Duval Specific)
-XP_ROW_2025          = '//table[contains(@id, "gridValues")]//tr[td[contains(text(), "2025")]]'
-XP_VAL_BUILDING      = './td[3]' 
-XP_VAL_LAND          = './td[2]' 
+XP_VAL_BUILDING      = '(//span[contains(@id,"BuildingValue")])[2]' 
+XP_VAL_LAND          = '(//span[contains(@id,"LandValueMarket")])[2]' 
 XP_SALES_TABLE_ROWS  = '//table[contains(@id, "gridSales")]//tr[position()>1]'
 
 # Relative XPaths
-XP_SALE_DATE         = './td[1]'
-XP_SALE_PRICE        = './td[2]'
-XP_DEED_TYPE         = './td[3]'
+XP_SALE_DATE         = './td[2]'
+XP_SALE_PRICE        = './td[3]'
+XP_DEED_TYPE         = './td[4]'
 XP_QUALIFIED         = './td[5]'
 XP_VACANT_IMP        = './td[6]'
 
 # --- 2. HELPERS ---
 
 def parse_date(date_str):
-    if not date_str:
-        return datetime.min
-    try:
-        return datetime.strptime(date_str.strip(), "%m/%d/%Y")
-    except ValueError:
-        return datetime.min
+    """
+    Robust date parser that tries multiple formats.
+    1. CSV Input Format: "Wednesday September 10, 2025" (%A %B %d, %Y)
+    2. Website Table Format: "09/10/2025" (%m/%d/%Y)
+    """
+
+    clean_str = date_str.strip()
+    
+    # List of formats to try
+    formats = [
+        "%A %B %d, %Y",  # Long: Wednesday September 10, 2025
+        "%m/%d/%Y",      # Short: 09/10/2025
+        "%Y-%m-%d"       # ISO: 2025-09-10 (Just in case)
+    ]
+    
+    for fmt in formats:
+        try:
+            return datetime.strptime(clean_str, fmt)
+        except ValueError:
+            continue
+            
+    # If all fail, return min date so it doesn't crash
+    print(f"Warning: Could not parse date '{date_str}'")
+    return datetime.min
 
 def clean_price(price_str):
     if not price_str:
@@ -52,15 +77,8 @@ async def parse_and_filter_flips(page_html, input_url, input_date_str, input_pri
     target_price_clean = clean_price(input_price_str)
     
     # B. Extract 2025 Values (Always needed)
-    row_2025 = tree.xpath(XP_ROW_2025)
-    building_val = "N/A"
-    land_val = "N/A"
-    if row_2025:
-        r = row_2025[0]
-        b_nodes = r.xpath(XP_VAL_BUILDING)
-        if b_nodes: building_val = b_nodes[0].text_content().strip()
-        l_nodes = r.xpath(XP_VAL_LAND)
-        if l_nodes: land_val = l_nodes[0].text_content().strip()
+    building_val = tree.xpath(XP_VAL_BUILDING)
+    land_val = tree.xpath(XP_VAL_LAND)
 
     # C. Iterate History
     sales_rows = tree.xpath(XP_SALES_TABLE_ROWS)
@@ -121,33 +139,41 @@ async def main():
     browser = await n.start(browser_args=['--start-maximized'])
 
     tasks = []
-    
-    if os.path.exists(INPUT_CSV):
-        with open(INPUT_CSV, 'r', encoding='utf-8-sig') as f:
-            reader = csv.DictReader(f)
-            
-            required_cols = ['Link', 'Date', 'Sale Amount', 'County']
-            if not all(col in reader.fieldnames for col in required_cols):
-                 print(f"Error: CSV missing columns. Found: {reader.fieldnames}")
-                 return
 
-            for row in reader:
-                county = row.get('County', '').strip()
-                if county.lower() != TARGET_COUNTY.lower():
-                    continue
-
-                url = row.get('Link')
-                date = row.get('Date')
-                price = row.get('Sale Amount')
-                
-                if url and url != "N/A":
-                    tasks.append((url, date, price))
+    # 1. GET LSIT OF TARGETS TO SCRAPE (override URL or filter a csv)
+    if TEST_OVERRIDE:
+        print(f"\n!!! USING TEST OVERRIDE MODE !!!")
+        print(f"Target: {TEST_OVERRIDE[0]}\n")
+        tasks.append(TEST_OVERRIDE)
     else:
-        print(f"Error: {INPUT_CSV} not found.")
-        return
+        # Normal CSV Processing
+        if os.path.exists(INPUT_CSV):
+            with open(INPUT_CSV, 'r', encoding='utf-8-sig') as f:
+                reader = csv.DictReader(f)
+                
+                required_cols = ['Link', 'Date', 'Sale Amount', 'County']
+                if not all(col in reader.fieldnames for col in required_cols):
+                    print(f"Error: CSV missing columns. Found: {reader.fieldnames}")
+                    return
 
-    print(f"Loaded {len(tasks)} properties for {TARGET_COUNTY}...")
+                for row in reader:
+                    county = row.get('County', '').strip()
+                    if county.lower() != TARGET_COUNTY.lower():
+                        continue
 
+                    url = row.get('Link')
+                    date = row.get('Date')
+                    price = row.get('Sale Amount')
+                    
+                    if url and url != "N/A":
+                        tasks.append((url, date, price))
+        else:
+            print(f"Error: {INPUT_CSV} not found.")
+            return
+        
+        print(f"Loaded {len(tasks)} properties for {TARGET_COUNTY}...")
+
+    # 2. PROCESS TASKS
     with open(OUTPUT_FILE, 'w', newline='', encoding='utf-8') as f:
         writer = csv.writer(f)
         writer.writerow([
@@ -164,7 +190,7 @@ async def main():
                 
                 try:
                     await page.wait_for("#propValue")
-                    await asyncio.sleep(1) # Fixed: usage of await asyncio.sleep
+                    await asyncio.sleep(1) 
                 except:
                     print("  -> Page load failed")
                     continue
