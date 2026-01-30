@@ -7,9 +7,15 @@ from lxml import html
 from datetime import datetime
 
 # --- 1. CONFIGURATION & XPATH SELECTORS ---
-CALENDAR_URL = "https://duval.realtaxdeed.com/index.cfm?zaction=user&zmethod=calendar&selCalDate=%7Bts%20%272025%2D01%2D01%2000%3A00%3A00%27%7D"
-AUCTION_URL_TEMPLATE = "https://duval.realtaxdeed.com/index.cfm?zaction=AUCTION&Zmethod=PREVIEW&AUCTIONDATE={date}"
-OUTPUT_FILE = f"duval_sales_{datetime.now().strftime('%Y-%m-%d')}.csv"
+# List of counties to scrape (county_name, calendar_url)
+COUNTIES = [
+    ("Duval", "https://duval.realtaxdeed.com/index.cfm?zaction=user&zmethod=calendar&selCalDate=%7Bts%20%272025%2D01%2D01%2000%3A00%3A00%27%7D"),
+    ("Nassau", "https://nassau.realtaxdeed.com/index.cfm?zaction=user&zmethod=calendar&selCalDate=%7Bts%20%272025%2D01%2D01%2000%3A00%3A00%27%7D"),
+    ("Clay", "https://clay.realtaxdeed.com/index.cfm?zaction=user&zmethod=calendar&selCalDate=%7Bts%20%272025%2D01%2D01%2000%3A00%3A00%27%7D"),
+    ("Baker", "https://baker.realtaxdeed.com/index.cfm?zaction=user&zmethod=calendar&selCalDate=%7Bts%20%272025%2D01%2D01%2000%3A00%3A00%27%7D")
+]
+
+OUTPUT_FILE = f"tax_sales_{datetime.now().strftime('%Y-%m-%d')}.csv"
 LOG_FILE = f"tax_sale_scrape_{datetime.now().strftime('%Y-%m-%d')}.log"
 
 # --- Configure Logging ---
@@ -84,7 +90,7 @@ async def step_get_date(tab):
         raise ElementMissingError("Could not find auction date element")
     return date_els[0].text.strip()
 
-async def step_extract_items(tab, current_date, writer, file_handle):
+async def step_extract_items(tab, county_name, current_date, writer, file_handle):
     """Finds all items on current view, parses them, writes to CSV."""
     
     # Get all auction item divs using XPath (xpath returns a list)
@@ -121,7 +127,7 @@ async def step_extract_items(tab, current_date, writer, file_handle):
             parcel_link = parcel_id_raw.get('href')
 
             # Write to CSV
-            writer.writerow([current_date, parcel_id, address, sale_amount, assessed_value, opening_bid, parcel_link])
+            writer.writerow([county_name, current_date, parcel_id, address, sale_amount, assessed_value, opening_bid, parcel_link])
             file_handle.flush()
 
         except Exception as e:
@@ -170,7 +176,7 @@ async def step_next_page_of_items(tab):
         logger.error(f"   Error in pagination: {e}")
     return False
 
-async def collect_auction_dates_from_calendar(tab):
+async def collect_auction_dates_from_calendar(tab, calendar_url):
     """
     Navigates through the calendar and collects all auction date dayids.
     Stops when no auction days are found AND the calendar month is beyond current month/year.
@@ -180,7 +186,7 @@ async def collect_auction_dates_from_calendar(tab):
     current_real_date = datetime.now()
     
     logger.info("Navigating to calendar page...")
-    await tab.get(CALENDAR_URL)
+    await tab.get(calendar_url)
     await asyncio.sleep(3)
     
     while True:
@@ -258,6 +264,13 @@ async def collect_auction_dates_from_calendar(tab):
     return auction_dates
 
 
+def get_base_url(calendar_url):
+    """Extract base URL from calendar URL (e.g., https://duval.realtaxdeed.com)."""
+    from urllib.parse import urlparse
+    parsed = urlparse(calendar_url)
+    return f"{parsed.scheme}://{parsed.netloc}"
+
+
 # --- 4. MAIN EXECUTION ---
 
 async def main():
@@ -268,61 +281,72 @@ async def main():
         tab = await browser.get("about:blank")
         await asyncio.sleep(1)
         
-        # Step 1: Collect all auction dates from the calendar
-        auction_dates = await collect_auction_dates_from_calendar(tab)
-        
-        logger.info(f"Will process {len(auction_dates)} auction dates.")
-        
-        # Step 2: Process each auction date
+        # Open CSV file once for all counties
         with open(OUTPUT_FILE, 'w', newline='', encoding='utf-8') as f:
             writer = csv.writer(f)
-            writer.writerow(["Date", "Parcel ID", "Address", "Sale Amount", "Assessed Value", "Opening Bid", "Link"])
+            writer.writerow(["County", "Date", "Parcel ID", "Address", "Sale Amount", "Assessed Value", "Opening Bid", "Link"])
             
             logger.info(f"Scraper Initialized. Output: {OUTPUT_FILE}")
             
-            for i, auction_date in enumerate(auction_dates):
-                logger.info(f"Processing auction date {i+1}/{len(auction_dates)}: {auction_date}")
+            # Loop over all counties
+            for county_name, calendar_url in COUNTIES:
+                logger.info(f"\n{'='*50}")
+                logger.info(f"Processing County: {county_name}")
+                logger.info(f"{'='*50}")
                 
-                # Skip future auction dates - they can't have sold items
-                try:
-                    auction_dt = datetime.strptime(auction_date, "%m/%d/%Y")
-                    if auction_dt.date() > datetime.now().date():
-                        logger.info(f"   Skipping {auction_date} - future date, cannot have sold auctions.")
-                        continue
-                except ValueError:
-                    pass  # If date parsing fails, try to process anyway
+                # Get base URL for auction pages
+                base_url = get_base_url(calendar_url)
+                auction_url_template = f"{base_url}/index.cfm?zaction=AUCTION&Zmethod=PREVIEW&AUCTIONDATE={{date}}"
                 
-                # Navigate to auction page for this date
-                auction_url = AUCTION_URL_TEMPLATE.format(date=auction_date)
-                await tab.get(auction_url)
-                await asyncio.sleep(3)
+                # Step 1: Collect all auction dates from the calendar
+                auction_dates = await collect_auction_dates_from_calendar(tab, calendar_url)
                 
-                # Check if this auction has closed sales
-                should_skip = await step_check_stop_condition(tab)
-                if should_skip:
-                    logger.info(f"   Skipping {auction_date} - no closed sales (waiting auctions only).")
-                    continue
+                logger.info(f"Will process {len(auction_dates)} auction dates for {county_name}.")
                 
-                # Get the date string from the page header
-                try:
-                    date_str = await step_get_date(tab)
-                except ElementMissingError:
-                    logger.warning(f"   Could not get date from page for {auction_date}. Skipping.")
-                    continue
-                
-                logger.info(f"   Page shows: {date_str}")
-                
-                # Inner Loop: Extract items from all pages
-                while True:
-                    try:
-                        await step_extract_items(tab, date_str, writer, f)
-                    except ElementMissingError as e:
-                        logger.warning(f"   {e}")
-                        break
+                # Step 2: Process each auction date
+                for i, auction_date in enumerate(auction_dates):
+                    logger.info(f"Processing auction date {i+1}/{len(auction_dates)}: {auction_date}")
                     
-                    has_next_page = await step_next_page_of_items(tab)
-                    if not has_next_page:
-                        break
+                    # Skip future auction dates - they can't have sold items
+                    try:
+                        auction_dt = datetime.strptime(auction_date, "%m/%d/%Y")
+                        if auction_dt.date() > datetime.now().date():
+                            logger.info(f"   Skipping {auction_date} - future date, cannot have sold auctions.")
+                            continue
+                    except ValueError:
+                        pass  # If date parsing fails, try to process anyway
+                    
+                    # Navigate to auction page for this date
+                    auction_url = auction_url_template.format(date=auction_date)
+                    await tab.get(auction_url)
+                    await asyncio.sleep(3)
+                    
+                    # Check if this auction has closed sales
+                    should_skip = await step_check_stop_condition(tab)
+                    if should_skip:
+                        logger.info(f"   Skipping {auction_date} - no closed sales (waiting auctions only).")
+                        continue
+                    
+                    # Get the date string from the page header
+                    try:
+                        date_str = await step_get_date(tab)
+                    except ElementMissingError:
+                        logger.warning(f"   Could not get date from page for {auction_date}. Skipping.")
+                        continue
+                    
+                    logger.info(f"   Page shows: {date_str}")
+                    
+                    # Inner Loop: Extract items from all pages
+                    while True:
+                        try:
+                            await step_extract_items(tab, county_name, date_str, writer, f)
+                        except ElementMissingError as e:
+                            logger.warning(f"   {e}")
+                            break
+                        
+                        has_next_page = await step_next_page_of_items(tab)
+                        if not has_next_page:
+                            break
         
         logger.info("Scraping complete!")
         
