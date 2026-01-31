@@ -4,15 +4,15 @@ import os
 # --- CONFIGURATION ---
 
 # 1. The Master Input File (Where we got the leads)
-SOURCE_CSV = "tax_sales_2026-01-29.csv"
+SOURCE_CSV = "../../data/past_auctions/tax_sales_2026-01-29.csv"
 
 # 2. The Output Files (Where we stored the results)
 # Add or remove files from this list as needed.
 TARGET_FILES = [
-    "duval_assessment_and_flips.csv",
-    "nassau_assessment_and_flips.csv",
-    "clay_assessment_and_flips.csv",
-    "baker_assessment_and_flips.csv"
+    "../../data/parcel_history/duval_assessment_and_flips.csv",
+    "../../data/parcel_history/nassau_assessment_and_flips.csv",
+    "../../data/parcel_history/clay_assessment_and_flips.csv",
+    "../../data/parcel_history/baker_assessment_and_flips.csv"
 ]
 
 # --- LOGIC ---

@@ -7,7 +7,7 @@ from datetime import datetime
 
 # --- 1. GLOBAL CONFIGURATION ---
 
-INPUT_CSV = "tax_sales_2026-01-29.csv"
+INPUT_CSV = "../../data/past_auctions/tax_sales_2026-01-29.csv"
 
 # --- OVERRIDES ---
 
@@ -24,7 +24,7 @@ OVERRIDE_COUNTY = "Clay"
 COUNTY_CONFIGS = {
     "Duval": {
         "banned_phrases": ["No Results Found"],
-        "output_file": "duval_assessment_and_flips.csv",
+        "output_file": "../../data/parcel_history/duval_assessment_and_flips.csv",
         "wait_target": "//*[@id='propValue']",
         "xp_val_bldg": '(//span[contains(@id,"BuildingValue")])[2]',
         "xp_val_land": '(//span[contains(@id,"LandValueMarket")])[2]',
@@ -36,7 +36,7 @@ COUNTY_CONFIGS = {
         "xp_vacant": './td[6]',
     },
     "Baker": {
-        "output_file": "baker_assessment_and_flips.csv",
+        "output_file": "../../data/parcel_history/baker_assessment_and_flips.csv",
         "wait_target": "//*[contains(text(), 'Value Information')]",
         "xp_val_bldg": '//div[contains(text(),"BUILDING VALUE:")]/following-sibling::div',
         "xp_val_land": '//div[contains(text(),"LAND VALUE:")]/following-sibling::div',
@@ -48,7 +48,7 @@ COUNTY_CONFIGS = {
         "xp_vacant": './td[5]',
     },
     "Clay": {
-        "output_file": "clay_assessment_and_flips.csv",
+        "output_file": "../../data/parcel_history/clay_assessment_and_flips.csv",
         # --- NEW SEARCH WORKFLOW CONFIG ---
         "click_agree": "//a[text()='Agree']",
         "search_url": "https://qpublic.schneidercorp.com/Application.aspx?AppID=830&LayerID=15008&PageTypeID=2&PageID=6754",
@@ -69,7 +69,7 @@ COUNTY_CONFIGS = {
         "xp_vacant": './td[8]',
     },
     "Nassau": {
-        "output_file": "nassau_assessment_and_flips.csv",
+        "output_file": "../../data/parcel_history/nassau_assessment_and_flips.csv",
         "wait_target": "SALES INFORMATION",
         "xp_val_bldg": '//table//tr[td[contains(text(),"Improved Value")]]/td[2]',
         "xp_val_land": '//table//tr[td[contains(text(),"Land Value")]]/td[2]',

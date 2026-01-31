@@ -15,8 +15,8 @@ COUNTIES = [
     ("Baker", "https://baker.realtaxdeed.com/index.cfm?zaction=user&zmethod=calendar&selCalDate=%7Bts%20%272025%2D01%2D01%2000%3A00%3A00%27%7D")
 ]
 
-OUTPUT_FILE = f"tax_sales_{datetime.now().strftime('%Y-%m-%d')}.csv"
-LOG_FILE = f"tax_sale_scrape_{datetime.now().strftime('%Y-%m-%d')}.log"
+OUTPUT_FILE = f"../../data/past_auctions/tax_sales_{datetime.now().strftime('%Y-%m-%d')}.csv"
+LOG_FILE = f"../../logs/tax_sale_scrape_{datetime.now().strftime('%Y-%m-%d')}.log"
 
 # --- Configure Logging ---
 logging.basicConfig(
