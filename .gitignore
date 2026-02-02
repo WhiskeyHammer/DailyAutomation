@@ -1,2 +1,5 @@
 .vscode
 koyeb
+*__pycache__*
+.vscode
+backup_*

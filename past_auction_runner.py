@@ -8,17 +8,19 @@ from datetime import datetime
 # --- CONFIGURATION ---
 
 # Define the scripts to run in order
-# NOTE: Ensure these filenames match what you have in your src/ folder
 SCRIPTS = {
-    "Step 1 (Auctions)": "past_tax_sale_scrape.py",  
-    "Step 2 (Parcel History)": "parcel_history_scrape.py",  
-    "Step 3 (Verify)": "verify_sale_flip_scrape_alignment.py"
+    "Step 1 (Auctions)": "auction_scraper/history/past_tax_sale_scrape.py",  
+    "Step 2 (Parcel History)": "auction_scraper/history/parcel_history_scrape.py",  
+    "Step 3 (Verify)": "auction_scraper/history/verify_sale_flip_scrape_alignment.py"
 }
 
+# Generate timestamp for output files (down to the second)
+RUN_TIMESTAMP = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+
 # Logs for the runner itself
-LOG_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'logs')
+LOG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'logs')
 os.makedirs(LOG_DIR, exist_ok=True)
-RUNNER_LOG = os.path.join(LOG_DIR, f"pipeline_runner_{datetime.now().strftime('%Y-%m-%d')}.log")
+RUNNER_LOG = os.path.join(LOG_DIR, f"pipeline_runner_{RUN_TIMESTAMP}.log")
 
 # --- LOGGING SETUP ---
 logging.basicConfig(
@@ -33,17 +35,18 @@ logger = logging.getLogger(__name__)
 
 # --- EXECUTION ENGINE ---
 
-def run_script(step_name, script_name):
+def run_script(step_name, script_path_relative):
     """
     Runs a python script as a subprocess and waits for it to finish.
     """
-    script_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), script_name)
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    script_path = os.path.join(base_dir, script_path_relative)
 
     if not os.path.exists(script_path):
         logger.error(f"CRITICAL: Could not find script for {step_name} at: {script_path}")
         return False
 
-    logger.info(f"--- STARTING {step_name}: {script_name} ---")
+    logger.info(f"--- STARTING {step_name}: {script_path_relative} ---")
     start_time = time.time()
 
     try:
@@ -71,7 +74,7 @@ def main():
     total_start = time.time()
 
     # 1. Run Step 1: Auction Scraper
-    if not run_script("Step 1 (Leads)", SCRIPTS["Step 1 (Leads)"]):
+    if not run_script("Step 1 (Auctions)", SCRIPTS["Step 1 (Auctions)"]):
         logger.error("Pipeline aborted due to failure in Step 1.")
         sys.exit(1)
 
@@ -79,7 +82,7 @@ def main():
     time.sleep(2)
 
     # 2. Run Step 2: History Scraper
-    if not run_script("Step 2 (History)", SCRIPTS["Step 2 (History)"]):
+    if not run_script("Step 2 (Parcel History)", SCRIPTS["Step 2 (Parcel History)"]):
         logger.error("Pipeline aborted due to failure in Step 2.")
         sys.exit(1)
 

@@ -2,11 +2,17 @@ import asyncio
 import nodriver as n
 import csv
 import logging
+import os
 from lxml import html
 
 from datetime import datetime
 
 # --- 1. CONFIGURATION & XPATH SELECTORS ---
+
+# Get the project root directory (two levels up from this script)
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT = os.path.dirname(os.path.dirname(SCRIPT_DIR))
+
 # List of counties to scrape (county_name, calendar_url)
 COUNTIES = [
     ("Duval", "https://duval.realtaxdeed.com/index.cfm?zaction=user&zmethod=calendar&selCalDate=%7Bts%20%272025%2D01%2D01%2000%3A00%3A00%27%7D"),
@@ -15,8 +21,11 @@ COUNTIES = [
     ("Baker", "https://baker.realtaxdeed.com/index.cfm?zaction=user&zmethod=calendar&selCalDate=%7Bts%20%272025%2D01%2D01%2000%3A00%3A00%27%7D")
 ]
 
-OUTPUT_FILE = f"../../data/past_auctions/tax_sales_{datetime.now().strftime('%Y-%m-%d')}.csv"
-LOG_FILE = f"../../logs/tax_sale_scrape_{datetime.now().strftime('%Y-%m-%d')}.log"
+# Generate timestamp for output files (down to the second)
+RUN_TIMESTAMP = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+
+OUTPUT_FILE = os.path.join(PROJECT_ROOT, "data", "past_auctions", f"tax_sales_{RUN_TIMESTAMP}.csv")
+LOG_FILE = os.path.join(PROJECT_ROOT, "logs", f"tax_sale_scrape_{RUN_TIMESTAMP}.log")
 
 # --- Configure Logging ---
 logging.basicConfig(

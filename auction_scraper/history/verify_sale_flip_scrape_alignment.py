@@ -1,18 +1,27 @@
 import csv
 import os
+import glob
 
 # --- CONFIGURATION ---
 
+# Get the project root directory (two levels up from this script)
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT = os.path.dirname(os.path.dirname(SCRIPT_DIR))
+
 # 1. The Master Input File (Where we got the leads)
-SOURCE_CSV = "../../data/past_auctions/tax_sales_2026-01-29.csv"
+# Find the most recent tax_sales CSV file
+PAST_AUCTIONS_DIR = os.path.join(PROJECT_ROOT, "data", "past_auctions")
+tax_sales_files = glob.glob(os.path.join(PAST_AUCTIONS_DIR, "tax_sales_*.csv"))
+SOURCE_CSV = sorted(tax_sales_files)[-1] if tax_sales_files else os.path.join(PAST_AUCTIONS_DIR, "tax_sales.csv")
 
 # 2. The Output Files (Where we stored the results)
-# Add or remove files from this list as needed.
+# Using glob patterns to find the latest timestamped files
+PARCEL_HISTORY_DIR = os.path.join(PROJECT_ROOT, "data", "parcel_history")
 TARGET_FILES = [
-    "../../data/parcel_history/duval_assessment_and_flips.csv",
-    "../../data/parcel_history/nassau_assessment_and_flips.csv",
-    "../../data/parcel_history/clay_assessment_and_flips.csv",
-    "../../data/parcel_history/baker_assessment_and_flips.csv"
+    os.path.join(PARCEL_HISTORY_DIR, "duval_assessment_and_flips_*.csv"),
+    os.path.join(PARCEL_HISTORY_DIR, "nassau_assessment_and_flips_*.csv"),
+    os.path.join(PARCEL_HISTORY_DIR, "clay_assessment_and_flips_*.csv"),
+    os.path.join(PARCEL_HISTORY_DIR, "baker_assessment_and_flips_*.csv")
 ]
 
 # --- LOGIC ---
@@ -30,20 +39,27 @@ def normalize_pid(pid):
         return None
     return cleaned
 
-def load_processed_pids(file_list):
+def load_processed_pids(file_patterns):
     """
-    Reads all Target Files and gathers every Parcel ID found.
+    Reads all Target Files (using glob patterns) and gathers every Parcel ID found.
+    For each pattern, uses the most recent file if multiple matches exist.
     Returns: A set of normalized Parcel IDs.
     """
     processed = set()
     files_checked = 0
 
-    print(f"--- Loading Data from {len(file_list)} Output Files ---")
+    print(f"--- Loading Data from {len(file_patterns)} Output File Patterns ---")
 
-    for filename in file_list:
-        if not os.path.exists(filename):
-            print(f"[WARN] File not found: {filename}")
+    for pattern in file_patterns:
+        # Find all files matching the pattern
+        matching_files = glob.glob(pattern)
+        
+        if not matching_files:
+            print(f"[WARN] No files found matching: {pattern}")
             continue
+        
+        # Use the most recent file (sorted alphabetically, timestamps sort correctly)
+        filename = sorted(matching_files)[-1]
         
         try:
             with open(filename, 'r', encoding='utf-8-sig') as f:
