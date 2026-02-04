@@ -14,10 +14,11 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(os.path.dirname(SCRIPT_DIR))
 
 # List of counties to scrape (county_name, calendar_url)
+# Clay goes first because it's a pain and may need manual intervention
 COUNTIES = [
+    ("Clay", "https://clay.realtaxdeed.com/index.cfm?zaction=user&zmethod=calendar&selCalDate=%7Bts%20%272025%2D01%2D01%2000%3A00%3A00%27%7D"),
     ("Duval", "https://duval.realtaxdeed.com/index.cfm?zaction=user&zmethod=calendar&selCalDate=%7Bts%20%272025%2D01%2D01%2000%3A00%3A00%27%7D"),
     ("Nassau", "https://nassau.realtaxdeed.com/index.cfm?zaction=user&zmethod=calendar&selCalDate=%7Bts%20%272025%2D01%2D01%2000%3A00%3A00%27%7D"),
-    ("Clay", "https://clay.realtaxdeed.com/index.cfm?zaction=user&zmethod=calendar&selCalDate=%7Bts%20%272025%2D01%2D01%2000%3A00%3A00%27%7D"),
     ("Baker", "https://baker.realtaxdeed.com/index.cfm?zaction=user&zmethod=calendar&selCalDate=%7Bts%20%272025%2D01%2D01%2000%3A00%3A00%27%7D")
 ]
 

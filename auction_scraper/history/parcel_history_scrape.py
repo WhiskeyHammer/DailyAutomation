@@ -388,10 +388,13 @@ async def main():
         print(f"Input file {INPUT_CSV} not found.")
         return
 
-    # Execute batches
-    for county, tasks in county_tasks.items():
-        if tasks:
-            await process_county_batch(browser, county, tasks)
+    # Execute batches - Clay first, then the rest
+    # (Clay uses a search workflow that requires active session management)
+    COUNTY_ORDER = ["Clay", "Duval", "Baker", "Nassau"]
+    
+    for county in COUNTY_ORDER:
+        if county in county_tasks and county_tasks[county]:
+            await process_county_batch(browser, county, county_tasks[county])
 
     # browser.stop()
 
