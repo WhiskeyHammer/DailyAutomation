@@ -1,0 +1,39 @@
+2026-02-05 15:00:34,798 - INFO - starting
+	executable :C:\Program Files\Google\Chrome\Application\chrome.exe
+
+arguments:
+--remote-allow-origins=*
+	--no-first-run
+	--no-service-autorun
+	--no-default-browser-check
+	--homepage=about:blank
+	--no-pings
+	--password-store=basic
+	--disable-infobars
+	--disable-breakpad
+	--disable-dev-shm-usage
+	--disable-session-crashed-bubble
+	--disable-search-engine-choice-screen
+	--user-data-dir=C:\Users\JEWIGG~1\AppData\Local\Temp\uc_0gl6lydh
+	--disable-session-crashed-bubble
+	--disable-features=IsolateOrigins,site-per-process
+	--start-maximized
+	--load-extension=c:\Users\jewiggins\Desktop\DailyAutomation\DailyAutomation\auction_scraper\history\chrome_proxy_auth_ext
+	--remote-debugging-host=127.0.0.1
+	--remote-debugging-port=54484
+2026-02-05 15:00:36,012 - INFO - enabling autodiscover targets
+2026-02-05 15:00:37,750 - INFO - Scraper Initialized. Output: c:\Users\jewiggins\Desktop\DailyAutomation\DailyAutomation\data\past_auctions\tax_sales_2026-02-05_15-00-34.csv
+2026-02-05 15:00:37,751 - INFO - 
+==================================================
+2026-02-05 15:00:37,753 - INFO - Processing County: Clay
+2026-02-05 15:00:37,754 - INFO - ==================================================
+2026-02-05 15:00:37,758 - INFO - Navigating to calendar page...
+2026-02-05 15:00:41,788 - INFO - Scanning calendar: January 2025
+2026-02-05 15:00:42,003 - INFO -    Found auction date: 01/15/2025
+2026-02-05 15:00:42,575 - INFO -    -> Clicking Next Month... (attempt 1/3)
+2026-02-05 15:00:43,752 - INFO - Scanning calendar: February 2025
+2026-02-05 15:00:43,798 - INFO -    Found auction date: 02/26/2025
+2026-02-05 15:00:44,345 - INFO -    -> Clicking Next Month... (attempt 1/3)
+2026-02-05 15:00:45,539 - INFO - Scanning calendar: March 2025
+2026-02-05 15:00:49,409 - INFO -    -> Clicking Next Month... (attempt 1/3)
+2026-02-05 15:00:50,808 - INFO - Scanning calendar: April 2025

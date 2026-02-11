@@ -2,6 +2,7 @@ import asyncio
 import nodriver as n
 import csv
 import os
+import sys
 import glob
 from lxml import html
 from datetime import datetime
@@ -11,6 +12,18 @@ from datetime import datetime
 # Get the project root directory (two levels up from this script)
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(os.path.dirname(SCRIPT_DIR))
+
+# --- PROXY SETUP ---
+sys.path.append(PROJECT_ROOT)
+try:
+    from proxy_manager import create_proxy_auth_extension, get_random_proxy
+except ImportError:
+    print("Warning: Could not import proxy_manager. Running without proxy.")
+    get_random_proxy = lambda x: None
+    create_proxy_auth_extension = lambda x, y: None
+
+PROXY_FILE = os.path.join(PROJECT_ROOT, "proxies.txt")
+# -------------------
 
 # Find the most recent tax_sales CSV file
 PAST_AUCTIONS_DIR = os.path.join(PROJECT_ROOT, "data", "past_auctions")
@@ -351,7 +364,20 @@ async def process_county_batch(browser, county_name, tasks):
 # --- 4. MAIN ---
 
 async def main():
-    browser = await n.start(browser_args=['--start-maximized'])
+    browser_args = ['--start-maximized']
+
+    # --- PROXY INJECTION ---
+    proxy_str = get_random_proxy(PROXY_FILE)
+    if proxy_str:
+        print(f"Using Proxy: {proxy_str}")
+        ext_path = os.path.join(SCRIPT_DIR, "chrome_proxy_auth_ext")
+        if create_proxy_auth_extension(proxy_str, ext_path):
+            browser_args.append(f"--load-extension={ext_path}")
+    else:
+        print("No proxy found (or proxies.txt is missing). Running with Direct Connection.")
+    # -----------------------
+
+    browser = await n.start(browser_args=browser_args)
 
     county_tasks = {k: [] for k in COUNTY_CONFIGS.keys()}
 

@@ -3,8 +3,8 @@ import nodriver as n
 import csv
 import logging
 import os
+import sys  # Added for path manipulation
 from lxml import html
-
 from datetime import datetime
 
 # --- 1. CONFIGURATION & XPATH SELECTORS ---
@@ -12,6 +12,20 @@ from datetime import datetime
 # Get the project root directory (two levels up from this script)
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(os.path.dirname(SCRIPT_DIR))
+
+# Add Project Root to sys.path to import proxy_manager
+sys.path.append(PROJECT_ROOT)
+
+try:
+    from proxy_manager import create_proxy_auth_extension, get_random_proxy
+except ImportError:
+    # Fallback/Safety if running from a different context
+    print("Warning: Could not import proxy_manager. Running without proxy.")
+    get_random_proxy = lambda x: None
+    create_proxy_auth_extension = lambda x, y: None
+
+# Proxy Configuration
+PROXY_FILE = os.path.join(PROJECT_ROOT, "proxies.txt")
 
 # List of counties to scrape (county_name, calendar_url)
 # Clay goes first because it's a pain and may need manual intervention
@@ -284,7 +298,25 @@ def get_base_url(calendar_url):
 # --- 4. MAIN EXECUTION ---
 
 async def main():
-    browser = await n.start(browser_args=['--start-maximized'])
+    browser_args = ['--start-maximized']
+
+    # --- PROXY CONFIGURATION ---
+    # 1. Pick a random proxy from proxies.txt
+    proxy_str = get_random_proxy(PROXY_FILE)
+    
+    if proxy_str:
+        print(f"Using Proxy for Auction Scrape: {proxy_str}")
+        # 2. Define where the temp extension will live
+        ext_path = os.path.join(SCRIPT_DIR, "chrome_proxy_auth_ext")
+        
+        # 3. Create the extension files
+        if create_proxy_auth_extension(proxy_str, ext_path):
+            # 4. Load it into Chrome
+            browser_args.append(f"--load-extension={ext_path}")
+    else:
+        print("No proxy found (or proxies.txt is missing). Running with Direct Connection.")
+
+    browser = await n.start(browser_args=browser_args)
     
     try:
         # Get initial tab
