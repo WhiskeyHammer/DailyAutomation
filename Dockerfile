@@ -14,6 +14,9 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY main.py .
+COPY sam_db.py .
+COPY sam_link_scraper.py .
+COPY sam_detail_scraper.py .
 
 # 4. Command to run the app
 CMD ["python", "main.py"]

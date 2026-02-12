@@ -1,2 +1,4 @@
 nodriver
+requests
+python-dotenv
 asyncio

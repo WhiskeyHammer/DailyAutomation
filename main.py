@@ -1,51 +1,136 @@
+"""
+Combined service runner:
+  1. Workout tracker keep-alive  — every 1-3 minutes
+  2. SAM.gov contract scraper    — every hour
+"""
+
 import asyncio
-import nodriver as uc
+import logging
 import random
+import time
 
-# Configuration
-TARGET_URL = "https://workout-tracker-hxg5.onrender.com/"
+import nodriver as uc
 
-async def check_site():
+from sam_contracts.sam_link_scraper import scrape_index
+from sam_contracts.sam_detail_scraper import scrape_details
+from sam_contracts.sam_db import (
+    connect,
+    init_schema,
+    upsert_notice,
+    upsert_notice_detail,
+    get_stale_notices,
+)
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+)
+logger = logging.getLogger(__name__)
+
+BROWSER_ARGS = [
+    "--no-sandbox",
+    "--disable-setuid-sandbox",
+    "--disable-dev-shm-usage",
+    "--disable-gpu",
+]
+
+# ---------------------------------------------------------------------------
+# 1.  Workout Tracker keep-alive
+# ---------------------------------------------------------------------------
+WORKOUT_URL = "https://workout-tracker-hxg5.onrender.com/"
+
+
+async def check_workout_site():
     browser = None
     try:
-        # Start browser with flags optimized for low-memory server environments
-        browser = await uc.start(
-            headless=True,
-            browser_args=[
-                "--no-sandbox", 
-                "--disable-setuid-sandbox", 
-                "--disable-dev-shm-usage", # Crucial for Docker
-                "--disable-gpu"
-            ]
-        )
-
-        tab = await browser.get(TARGET_URL)
-        
-        # Wait for the password field (indicates login screen)
-        # We use a short timeout to fail fast
-        print(f"Checking {TARGET_URL}...")
-        password_field = await tab.select('input[type="password"]', timeout=15)
-
-        if password_field:
-            print("SUCCESS: Login screen is visible.")
+        browser = await uc.start(headless=True, browser_args=BROWSER_ARGS)
+        tab = await browser.get(WORKOUT_URL)
+        logger.info(f"Checking {WORKOUT_URL} …")
+        pw = await tab.select('input[type="password"]', timeout=15)
+        if pw:
+            logger.info("Workout tracker: login screen visible ✓")
         else:
-            print("FAILURE: Password field not found.")
-
+            logger.warning("Workout tracker: password field NOT found")
     except Exception as e:
-        print(f"ERROR: {e}")
+        logger.error(f"Workout tracker error: {e}")
     finally:
-        # VERY IMPORTANT: Close the browser to free up RAM
         if browser:
             browser.stop()
 
-async def run_loop():
-    print("Starting Monitoring Service...")
-    while True:
-        await check_site()
-        check_interval = random.randint(60, 180)
-        print(f"Sleeping for {check_interval} seconds...")
-        await asyncio.sleep(check_interval)
 
-if __name__ == '__main__':
-    # nodriver standard loop
+# ---------------------------------------------------------------------------
+# 2.  SAM.gov Pipeline
+# ---------------------------------------------------------------------------
+
+async def run_sam_pipeline():
+    logger.info("=" * 60)
+    logger.info("SAM.gov pipeline starting")
+    logger.info("=" * 60)
+
+    db = connect()
+    init_schema(db)
+
+    try:
+        # Step 1: Scrape index pages
+        all_rows = await scrape_index(headless=True, browser_args=BROWSER_ARGS)
+
+        # Step 2: Upsert index rows to DB
+        for row in all_rows:
+            upsert_notice(db, row)
+        logger.info(f"Upserted {len(all_rows)} notices")
+
+        # Step 3: Find new/updated notices
+        stale = get_stale_notices(db, all_rows)
+        logger.info(f"Stale (new/updated) notices: {len(stale)}")
+
+        # Step 4: Scrape details for stale notices + upsert
+        if stale:
+            urls = [row["href"] for row in stale]
+            details = await scrape_details(urls, headless=True, browser_args=BROWSER_ARGS)
+            for detail in details:
+                if "error" not in detail:
+                    upsert_notice_detail(db, detail)
+            logger.info(f"Detail-scraped {len(details)} notices")
+
+        logger.info("SAM.gov pipeline complete ✓")
+
+    except Exception as exc:
+        logger.error(f"SAM pipeline error: {exc}")
+    finally:
+        db.close()
+
+
+# ---------------------------------------------------------------------------
+# 3.  Main loop
+# ---------------------------------------------------------------------------
+SAM_INTERVAL = 3600  # 1 hour
+
+
+async def run_loop():
+    logger.info("Starting combined service …")
+    last_sam_run = 0  # triggers immediately on first loop
+
+    while True:
+        now = time.time()
+
+        # SAM scraper (hourly)
+        if now - last_sam_run >= SAM_INTERVAL:
+            try:
+                await run_sam_pipeline()
+            except Exception as exc:
+                logger.error(f"SAM pipeline top-level error: {exc}")
+            last_sam_run = time.time()
+
+        # Workout keep-alive (every 1-3 min)
+        try:
+            await check_workout_site()
+        except Exception as exc:
+            logger.error(f"Workout check error: {exc}")
+
+        sleep_secs = random.randint(60, 180)
+        logger.info(f"Sleeping {sleep_secs}s …")
+        await asyncio.sleep(sleep_secs)
+
+
+if __name__ == "__main__":
     uc.loop().run_until_complete(run_loop())

@@ -153,11 +153,16 @@ async def click_next_page(page):
     return False
 
 
-async def main():
+async def scrape_index(headless=False, browser_args=None):
+    """
+    Scrape all index pages and return the list of row dicts.
+
+    Each row has: title, href, notice_id, updated_date.
+    """
     all_rows = []
 
     logger.info("Launching browser …")
-    browser = await uc.start()
+    browser = await uc.start(headless=headless, browser_args=browser_args or [])
 
     logger.info(f"Navigating to SAM.gov search …")
     page = await browser.get(START_URL)
@@ -201,22 +206,29 @@ async def main():
             logger.info("  No next-page button found. Done.")
             break
 
-    # --- Save results ---
+    logger.info(f"Done! Scraped {len(all_rows)} rows")
+    browser.stop()
+    return all_rows
+
+
+async def main():
+    """Standalone entry point — scrapes and saves to JSON."""
+    rows = await scrape_index()
+
     output_file = "sam_gov_results.json"
     with open(output_file, "w", encoding="utf-8") as f:
         json.dump(
             {
                 "scraped_at": datetime.now().isoformat(),
-                "total_rows": len(all_rows),
-                "results": all_rows,
+                "total_rows": len(rows),
+                "results": rows,
             },
             f,
             indent=2,
             ensure_ascii=False,
         )
 
-    logger.info(f"Done! Saved {len(all_rows)} rows to {output_file}")
-    browser.stop()
+    logger.info(f"Saved {len(rows)} rows to {output_file}")
 
 
 if __name__ == "__main__":

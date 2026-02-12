@@ -72,14 +72,14 @@ async def _scrape_page(page, url):
     return result
 
 
-async def scrape_details(urls):
+async def scrape_details(urls, headless=False, browser_args=None):
     """
     Scrape a list of SAM.gov detail page URLs.
 
     Launches one browser session, visits each URL in sequence,
     and returns a list of result dicts.
     """
-    browser = await uc.start()
+    browser = await uc.start(headless=headless, browser_args=browser_args or [])
     page = await browser.get("about:blank")
 
     results = []
@@ -94,7 +94,3 @@ async def scrape_details(urls):
 
     browser.stop()
     return results
-
-if __name__ == "__main__":
-    data = uc.loop().run_until_complete(scrape_details(["https://sam.gov/workspace/contract/opp/e56f2d7c9c82400080a153037789bfb8/view", "https://sam.gov/workspace/contract/opp/77312af31f3a46c4ada2e4bd770594cf/view"]))
-    print(data)
