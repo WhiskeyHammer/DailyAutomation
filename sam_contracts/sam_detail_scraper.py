@@ -1,8 +1,8 @@
 """
 SAM.gov Detail Page Scraper module.
 
-Provides scrape_detail(page, url) which navigates to a SAM.gov listing
-and returns structured data (title, notice ID, contacts, address).
+Provides scrape_details(urls) which launches one browser session,
+visits each URL, and returns a list of structured result dicts.
 """
 
 import logging
@@ -33,19 +33,11 @@ async def get_all_texts(page, selector):
     return []
 
 
-async def scrape_detail(url):
-    """
-    Navigate to a SAM.gov detail page and extract structured data.
-
-    Launches its own browser session.
-    Returns a dict with url, title, notice_id, contacts, and address.
-    """
-    browser = await uc.start()
-    page = await browser.get(url)
-
+async def _scrape_page(page, url):
+    """Scrape a single detail page. Assumes the browser is already running."""
     logger.info(f"Navigating to {url}")
+    await page.get(url)
 
-    # Wait for the title to appear — that means the page is ready
     title = await get_text(page, 'h1[aria-role="heading"]')
     notice_id = await get_text(page, 'h5[aria-describedby="notice-id"]')
 
@@ -55,7 +47,6 @@ async def scrape_detail(url):
 
     address_lines = await get_all_texts(page, "div:has(h2)>div>h6")
 
-    # Build index-matched contacts list
     max_pocs = max(len(poc_names), len(poc_emails), len(poc_phones), 0)
     contacts = []
     for i in range(max_pocs):
@@ -73,11 +64,37 @@ async def scrape_detail(url):
         "address": address_lines,
     }
 
-    logger.info(f"Title:     {title}")
-    logger.info(f"Notice ID: {notice_id}")
-    logger.info(f"Contacts:  {len(contacts)}")
-    logger.info(f"Address:   {address_lines}")
-
-    browser.stop()
+    logger.info(f"  Title:     {title}")
+    logger.info(f"  Notice ID: {notice_id}")
+    logger.info(f"  Contacts:  {len(contacts)}")
+    logger.info(f"  Address:   {address_lines}")
 
     return result
+
+
+async def scrape_details(urls):
+    """
+    Scrape a list of SAM.gov detail page URLs.
+
+    Launches one browser session, visits each URL in sequence,
+    and returns a list of result dicts.
+    """
+    browser = await uc.start()
+    page = await browser.get("about:blank")
+
+    results = []
+    for i, url in enumerate(urls, 1):
+        logger.info(f"--- Detail {i}/{len(urls)} ---")
+        try:
+            result = await _scrape_page(page, url)
+            results.append(result)
+        except Exception as exc:
+            logger.error(f"  Failed to scrape {url}: {exc}")
+            results.append({"url": url, "error": str(exc)})
+
+    browser.stop()
+    return results
+
+if __name__ == "__main__":
+    data = uc.loop().run_until_complete(scrape_details(["https://sam.gov/workspace/contract/opp/e56f2d7c9c82400080a153037789bfb8/view", "https://sam.gov/workspace/contract/opp/77312af31f3a46c4ada2e4bd770594cf/view"]))
+    print(data)

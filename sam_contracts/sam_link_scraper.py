@@ -2,8 +2,8 @@
 SAM.gov Contract Opportunities Scraper using nodriver.
 
 Navigates to a SAM.gov search results page, waits for dynamic content to load
-using a stabilization-check loop, extracts all h3 > a links, and paginates
-through every page of results.
+using a stabilization-check loop, extracts row data (link, notice ID, updated
+date) from each result, and paginates through every page.
 
 Requirements:
     pip install nodriver
@@ -43,7 +43,7 @@ INITIAL_LOAD_WAIT = 3       # Seconds to wait after initial page load / next-pag
 MAX_WAIT_CYCLES = 60        # Safety cap: max stability checks before giving up
 
 
-async def wait_for_links_stable(page, selector="h3 > a"):
+async def wait_for_rows_stable(page, selector="app-opportunity-result"):
     """
     Wait until the number of elements matching *selector* stops changing.
 
@@ -65,7 +65,7 @@ async def wait_for_links_stable(page, selector="h3 > a"):
             stable_count += 1
             if stable_count >= STABLE_ITERATIONS:
                 logger.info(
-                    f"  Page stabilised with {current_count} links "
+                    f"  Page stabilised with {current_count} rows "
                     f"(stable for {STABLE_ITERATIONS} checks)"
                 )
                 return current_count
@@ -83,18 +83,35 @@ async def wait_for_links_stable(page, selector="h3 > a"):
     return previous_count
 
 
-async def extract_links(page):
-    """Return a list of dicts with 'text' and 'href' for every h3 > a on the page."""
-    elements = await page.query_selector_all("h3 > a")
-    links = []
-    for elem in elements:
-        text = elem.text or ""
-        href = elem.attrs.get("href", "") if elem.attrs else ""
-        # SAM.gov uses relative links — make them absolute
-        if href and not href.startswith("http"):
-            href = f"https://sam.gov{href}"
-        links.append({"text": text.strip(), "href": href})
-    return links
+async def extract_rows(page):
+    """Extract link, ID, and updated date from each app-opportunity-result row."""
+    rows = await page.query_selector_all("app-opportunity-result")
+    results = []
+    for row in rows:
+        # Link
+        link_elem = await row.query_selector("h3 > a")
+        title = (link_elem.text or "").strip() if link_elem else ""
+        href = ""
+        if link_elem and link_elem.attrs:
+            href = link_elem.attrs.get("href", "")
+            if href and not href.startswith("http"):
+                href = f"https://sam.gov{href}"
+
+        # Notice ID
+        id_elem = await row.query_selector("div.margin-y-1 > h3")
+        notice_id = (id_elem.text or "").strip().removeprefix("Notice ID: ") if id_elem else ""
+
+        # Updated date
+        date_elem = await row.query_selector(".grid-col-auto > div:nth-of-type(3) .sds-field__value")
+        updated_date = (date_elem.text or "").strip() if date_elem else ""
+
+        results.append({
+            "title": title,
+            "href": href,
+            "notice_id": notice_id,
+            "updated_date": updated_date,
+        })
+    return results
 
 
 async def get_pagination_info(page):
@@ -137,7 +154,7 @@ async def click_next_page(page):
 
 
 async def main():
-    all_links = []
+    all_rows = []
 
     logger.info("Launching browser …")
     browser = await uc.start()
@@ -154,17 +171,17 @@ async def main():
         page_num += 1
         logger.info(f"--- Scraping page {page_num} ---")
 
-        # 1. Wait for links to stabilise
-        link_count = await wait_for_links_stable(page)
+        # 1. Wait for rows to stabilise
+        row_count = await wait_for_rows_stable(page)
 
-        if link_count == 0:
-            logger.warning("  No links found on this page. Stopping.")
+        if row_count == 0:
+            logger.warning("  No rows found on this page. Stopping.")
             break
 
-        # 2. Extract the links
-        links = await extract_links(page)
-        logger.info(f"  Extracted {len(links)} links")
-        all_links.extend(links)
+        # 2. Extract row data
+        rows = await extract_rows(page)
+        logger.info(f"  Extracted {len(rows)} rows")
+        all_rows.extend(rows)
 
         # 3. Read pagination info
         current_page, total_pages = await get_pagination_info(page)
@@ -190,15 +207,15 @@ async def main():
         json.dump(
             {
                 "scraped_at": datetime.now().isoformat(),
-                "total_links": len(all_links),
-                "results": all_links,
+                "total_rows": len(all_rows),
+                "results": all_rows,
             },
             f,
             indent=2,
             ensure_ascii=False,
         )
 
-    logger.info(f"Done! Saved {len(all_links)} links to {output_file}")
+    logger.info(f"Done! Saved {len(all_rows)} rows to {output_file}")
     browser.stop()
 
 
