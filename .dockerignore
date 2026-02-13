@@ -1,3 +1,8 @@
-# flyctl launch added from .gitignore
-**\.vscode
-fly.toml
+.vscode
+koyeb
+*__pycache__*
+.git
+.gitignore
+backup_*
+*.json
+.env
