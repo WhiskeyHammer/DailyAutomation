@@ -74,13 +74,13 @@ async def run_sam_pipeline():
         # Step 1: Scrape index pages
         all_rows = await scrape_index(headless=True, browser_args=BROWSER_ARGS)
 
-        # Step 2: Upsert index rows to DB
+        # Step 2: Upsert index rows to DB (does NOT set scraped_at)
         for row in all_rows:
             upsert_notice(db, row)
         logger.info(f"Upserted {len(all_rows)} notices")
 
-        # Step 3: Find new/updated notices
-        stale = get_stale_notices(db, all_rows)
+        # Step 3: Find notices that need detail scraping
+        stale = get_stale_notices(db)
         logger.info(f"Stale (new/updated) notices: {len(stale)}")
 
         # Step 4: Scrape details for stale notices + upsert

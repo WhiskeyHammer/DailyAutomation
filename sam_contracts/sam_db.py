@@ -187,23 +187,22 @@ def upsert_notice(client, notice):
     """
     Upsert an index-scraper row.
     Expects dict with: notice_id, title, href, updated_date.
+    Does NOT set scraped_at — only the detail scraper does that.
     """
     client.execute(
         """
-        INSERT INTO notices (notice_id, title, href, updated_date, scraped_at)
-        VALUES (:notice_id, :title, :href, :updated_date, :scraped_at)
+        INSERT INTO notices (notice_id, title, href, updated_date)
+        VALUES (:notice_id, :title, :href, :updated_date)
         ON CONFLICT(notice_id) DO UPDATE SET
             title        = excluded.title,
             href         = excluded.href,
-            updated_date = excluded.updated_date,
-            scraped_at   = excluded.scraped_at
+            updated_date = excluded.updated_date
         """,
         {
             "notice_id":    notice["notice_id"],
             "title":        notice.get("title", ""),
             "href":         notice.get("href", ""),
             "updated_date": notice.get("updated_date", ""),
-            "scraped_at":   datetime.now().isoformat(),
         },
     )
 
@@ -213,6 +212,7 @@ def upsert_notice_detail(client, detail):
     Update a notice with detail-scraper data and link contacts.
     Expects dict with: notice_id, title, url, contacts, address.
     Each contact is {name, email, phone}.
+    Sets scraped_at to mark this notice as detail-scraped.
     """
     address = "\n".join(detail.get("address", []))
 
@@ -267,20 +267,20 @@ def upsert_notice_detail(client, detail):
             )
 
 
-def get_stale_notices(client, rows):
+def get_stale_notices(client):
     """
-    Filter index rows to only new or modified ones.
-    Each row is a dict with notice_id and updated_date.
+    Return notices that need detail scraping:
+      - scraped_at is NULL (never detail-scraped), OR
+      - scraped_at < updated_date (listing changed since last detail scrape)
     """
-    stale = []
-    for row in rows:
-        rs = client.execute(
-            "SELECT updated_date FROM notices WHERE notice_id = :nid",
-            {"nid": row["notice_id"]},
-        )
-        if not rs["rows"] or rs["rows"][0][0] != row["updated_date"]:
-            stale.append(row)
-    return stale
+    rs = client.execute(
+        """
+        SELECT notice_id, title, href, updated_date
+        FROM notices
+        WHERE scraped_at IS NULL OR scraped_at < updated_date
+        """
+    )
+    return [dict(zip(rs["columns"], row)) for row in rs["rows"]]
 
 
 def get_all_notices(client):
