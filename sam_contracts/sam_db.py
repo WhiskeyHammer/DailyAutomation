@@ -140,7 +140,8 @@ _SCHEMA = [
         href         TEXT,
         updated_date TEXT,
         address      TEXT,
-        scraped_at   TEXT
+        scraped_at   TEXT,
+        status       TEXT DEFAULT 'new'
     )
     """,
     """
@@ -159,6 +160,21 @@ _SCHEMA = [
         PRIMARY KEY (notice_id, contact_id)
     )
     """,
+    """
+    CREATE TABLE IF NOT EXISTS addresses (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        notice_id   TEXT UNIQUE REFERENCES notices(notice_id),
+        raw_address TEXT,
+        mail_status TEXT DEFAULT 'unmailed'
+    )
+    """,
+]
+
+# Migrations for databases created before the status/addresses columns existed.
+# ALTER TABLE … ADD COLUMN is a no-op if the column already exists in Turso/SQLite ≥ 3.35,
+# but we wrap each in its own execute to tolerate "duplicate column" errors gracefully.
+_MIGRATIONS = [
+    "ALTER TABLE notices ADD COLUMN status TEXT DEFAULT 'new'",
 ]
 
 
@@ -206,8 +222,16 @@ def connect():
 
 
 def init_schema(client):
-    """Create tables if they don't already exist."""
+    """Create tables if they don't already exist, then run migrations."""
     client.batch([(sql.strip(), None) for sql in _SCHEMA])
+
+    # Run migrations individually — each may fail if already applied
+    for sql in _MIGRATIONS:
+        try:
+            client.execute(sql)
+        except Exception:
+            pass  # column already exists
+
     logger.info("Schema initialised.")
 
 
@@ -223,6 +247,7 @@ def upsert_notice(client, notice):
     Upsert an index-scraper row.
     Expects dict with: notice_id, title, href, updated_date.
     Does NOT set scraped_at — only the detail scraper does that.
+    Does NOT touch status — preserving user's triage decision.
     """
     client.execute(
         """
@@ -247,26 +272,45 @@ def upsert_notice_detail(client, detail):
     Update a notice with detail-scraper data and link contacts.
     Expects dict with: notice_id, title, url, contacts, address.
     Each contact is {name, email, phone}.
-    Sets scraped_at to mark this notice as detail-scraped.
+    Sets scraped_at and resets status to 'new' so the user reviews it again.
+    Also upserts the address into the addresses table.
     """
-    address = "\n".join(detail.get("address", []))
+    raw_address = "\n".join(detail.get("address", []))
 
+    # Update notice — reset status to 'new' on re-scrape
     client.execute(
         """
         UPDATE notices SET
             title      = :title,
             address    = :address,
-            scraped_at = :scraped_at
+            scraped_at = :scraped_at,
+            status     = 'new'
         WHERE notice_id = :notice_id
         """,
         {
             "title":     detail.get("title", ""),
-            "address":   address,
+            "address":   raw_address,
             "scraped_at": datetime.now().isoformat(),
             "notice_id": detail["notice_id"],
         },
     )
 
+    # Upsert address row (for the mailer-tracking frontend)
+    if raw_address.strip():
+        client.execute(
+            """
+            INSERT INTO addresses (notice_id, raw_address)
+            VALUES (:nid, :addr)
+            ON CONFLICT(notice_id) DO UPDATE SET
+                raw_address = excluded.raw_address
+            """,
+            {
+                "nid":  detail["notice_id"],
+                "addr": raw_address,
+            },
+        )
+
+    # Upsert contacts
     for contact in detail.get("contacts", []):
         fp = contact_fingerprint(
             contact.get("name"), contact.get("email"), contact.get("phone")
