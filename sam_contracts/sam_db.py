@@ -163,9 +163,16 @@ _SCHEMA = [
     """
     CREATE TABLE IF NOT EXISTS addresses (
         id          INTEGER PRIMARY KEY AUTOINCREMENT,
-        notice_id   TEXT UNIQUE REFERENCES notices(notice_id),
         raw_address TEXT,
-        mail_status TEXT DEFAULT 'unmailed'
+        mail_status TEXT DEFAULT 'unmailed',
+        fingerprint TEXT UNIQUE
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS notice_addresses (
+        notice_id  TEXT REFERENCES notices(notice_id),
+        address_id INTEGER REFERENCES addresses(id),
+        PRIMARY KEY (notice_id, address_id)
     )
     """,
 ]
@@ -242,6 +249,12 @@ def contact_fingerprint(name, email, phone):
     return hashlib.sha256(raw.encode()).hexdigest()[:16]
 
 
+def address_fingerprint(raw_address):
+    """Deduplicate addresses by normalised content hash."""
+    normalised = (raw_address or "").strip().lower()
+    return hashlib.sha256(normalised.encode()).hexdigest()[:16]
+
+
 def upsert_notice(client, notice):
     """
     Upsert an index-scraper row.
@@ -296,20 +309,31 @@ def upsert_notice_detail(client, detail):
         },
     )
 
-    # Upsert address row (for the mailer-tracking frontend)
+    # Upsert address row (fingerprinted, like contacts)
     if raw_address.strip():
+        fp = address_fingerprint(raw_address)
+
         client.execute(
             """
-            INSERT INTO addresses (notice_id, raw_address)
-            VALUES (:nid, :addr)
-            ON CONFLICT(notice_id) DO UPDATE SET
+            INSERT INTO addresses (raw_address, fingerprint)
+            VALUES (:addr, :fp)
+            ON CONFLICT(fingerprint) DO UPDATE SET
                 raw_address = excluded.raw_address
             """,
-            {
-                "nid":  detail["notice_id"],
-                "addr": raw_address,
-            },
+            {"addr": raw_address, "fp": fp},
         )
+
+        rs = client.execute(
+            "SELECT id FROM addresses WHERE fingerprint = :fp", {"fp": fp}
+        )
+        if rs["rows"]:
+            client.execute(
+                """
+                INSERT OR IGNORE INTO notice_addresses (notice_id, address_id)
+                VALUES (:nid, :aid)
+                """,
+                {"nid": detail["notice_id"], "aid": int(rs["rows"][0][0])},
+            )
 
     # Upsert contacts
     for contact in detail.get("contacts", []):
