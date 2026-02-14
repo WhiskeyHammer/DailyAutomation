@@ -83,6 +83,36 @@ async def wait_for_rows_stable(page, selector="app-opportunity-result"):
     return previous_count
 
 
+def normalize_date(raw_date):
+    """
+    Convert a human-readable date string from SAM.gov into ISO 8601 format
+    so it can be compared with scraped_at timestamps in the database.
+
+    Handles common SAM.gov formats:
+        'Jan 15, 2025'   -> '2025-01-15T00:00:00'
+        '01/15/2025'     -> '2025-01-15T00:00:00'
+        '2025-01-15'     -> '2025-01-15T00:00:00'
+    Returns the original string unchanged if no format matches.
+    """
+    if not raw_date:
+        return raw_date
+
+    formats = [
+        "%b %d, %Y",   # Jan 15, 2025
+        "%B %d, %Y",   # January 15, 2025
+        "%m/%d/%Y",    # 01/15/2025
+        "%Y-%m-%d",    # 2025-01-15
+    ]
+    for fmt in formats:
+        try:
+            return datetime.strptime(raw_date.strip(), fmt).strftime("%Y-%m-%dT%H:%M:%S")
+        except ValueError:
+            continue
+
+    logger.warning(f"Could not parse date '{raw_date}' – storing as-is")
+    return raw_date
+
+
 async def extract_rows(page):
     """Extract link, ID, and updated date from each app-opportunity-result row."""
     rows = await page.query_selector_all("app-opportunity-result")
@@ -101,9 +131,10 @@ async def extract_rows(page):
         id_elem = await row.query_selector("div.margin-y-1 > h3")
         notice_id = (id_elem.text or "").strip().removeprefix("Notice ID: ") if id_elem else ""
 
-        # Updated date
+        # Updated date – normalize to ISO 8601 so DB comparisons work
         date_elem = await row.query_selector(".grid-col-auto > div:nth-of-type(3) .sds-field__value")
-        updated_date = (date_elem.text or "").strip() if date_elem else ""
+        raw_date = (date_elem.text or "").strip() if date_elem else ""
+        updated_date = normalize_date(raw_date)
 
         results.append({
             "title": title,

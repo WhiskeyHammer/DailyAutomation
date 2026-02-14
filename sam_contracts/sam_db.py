@@ -14,6 +14,7 @@ Environment variables (in .env):
 import hashlib
 import logging
 import os
+import re
 from datetime import datetime
 
 import requests as _requests
@@ -162,6 +163,40 @@ _SCHEMA = [
 
 
 # ---------------------------------------------------------------------------
+# Date normalisation
+# ---------------------------------------------------------------------------
+
+def normalize_date(raw_date):
+    """
+    Best-effort normalisation of a date string to ISO 8601.
+
+    The link scraper should already normalise dates, but this acts as a safety
+    net so the  scraped_at < updated_date  comparison in get_stale_notices
+    always compares like-for-like.
+    """
+    if not raw_date:
+        return raw_date
+
+    # Already ISO-ish (starts with YYYY-MM-DD)
+    if re.match(r"^\d{4}-\d{2}-\d{2}", raw_date):
+        return raw_date
+
+    formats = [
+        "%b %d, %Y",   # Jan 15, 2025
+        "%B %d, %Y",   # January 15, 2025
+        "%m/%d/%Y",    # 01/15/2025
+    ]
+    for fmt in formats:
+        try:
+            return datetime.strptime(raw_date.strip(), fmt).strftime("%Y-%m-%dT%H:%M:%S")
+        except ValueError:
+            continue
+
+    logger.warning(f"normalize_date: could not parse '{raw_date}' – storing as-is")
+    return raw_date
+
+
+# ---------------------------------------------------------------------------
 # Public helpers
 # ---------------------------------------------------------------------------
 
@@ -202,7 +237,7 @@ def upsert_notice(client, notice):
             "notice_id":    notice["notice_id"],
             "title":        notice.get("title", ""),
             "href":         notice.get("href", ""),
-            "updated_date": notice.get("updated_date", ""),
+            "updated_date": normalize_date(notice.get("updated_date", "")),
         },
     )
 
