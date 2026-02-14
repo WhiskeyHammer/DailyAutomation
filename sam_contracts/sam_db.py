@@ -277,18 +277,19 @@ def upsert_notice_detail(client, detail):
     """
     raw_address = "\n".join(detail.get("address", []))
 
-    # Update notice — reset status to 'new' on re-scrape
+    # Update notice — reset status to 'new' on re-scrape.
+    # COALESCE keeps the existing title if the detail scraper returned None.
     client.execute(
         """
         UPDATE notices SET
-            title      = :title,
+            title      = COALESCE(:title, title),
             address    = :address,
             scraped_at = :scraped_at,
             status     = 'new'
         WHERE notice_id = :notice_id
         """,
         {
-            "title":     detail.get("title", ""),
+            "title":     detail.get("title") or None,
             "address":   raw_address,
             "scraped_at": datetime.now().isoformat(),
             "notice_id": detail["notice_id"],
