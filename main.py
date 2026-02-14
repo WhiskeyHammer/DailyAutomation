@@ -170,8 +170,11 @@ async def run_sam_pipeline():
         if stale:
             urls = [row["href"] for row in stale]
             details = await scrape_details(urls, headless=True, browser_args=BROWSER_ARGS)
-            for detail in details:
+            for i, detail in enumerate(details):
                 if "error" not in detail:
+                    # Use the known notice_id from DB if scraper didn't find one
+                    if not detail.get("notice_id"):
+                        detail["notice_id"] = stale[i]["notice_id"]
                     upsert_notice_detail(db, detail)
             logger.info(f"Detail-scraped {len(details)} notices")
 
