@@ -26,15 +26,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-START_URL = (
-    "https://sam.gov/search/?page=1&pageSize=25&sort=-modifiedDate&index=ac"
-    "&sfm%5BsimpleSearch%5D%5BkeywordRadio%5D=ALL"
-    "&sfm%5BsimpleSearch%5D%5BkeywordTags%5D%5B0%5D%5Bkey%5D=drone"
-    "&sfm%5BsimpleSearch%5D%5BkeywordTags%5D%5B0%5D%5Bvalue%5D=drone"
-    "&sfm%5BsimpleSearch%5D%5BkeywordEditorTextarea%5D="
-    "&sfm%5Bstatus%5D%5Bis_active%5D=true"
-    "&sfm%5Bstatus%5D%5Bis_inactive%5D=false"
-)
+START_URL = ("https://sam.gov/search/?page=1&pageSize=25&sort=-modifiedDate&sfm%5BsimpleSearch%5D%5BkeywordRadio%5D=ANY&sfm%5BsimpleSearch%5D%5BkeywordTags%5D%5B0%5D%5Bkey%5D=%22C-UAS%22&sfm%5BsimpleSearch%5D%5BkeywordTags%5D%5B0%5D%5Bvalue%5D=%22C-UAS%22&sfm%5BsimpleSearch%5D%5BkeywordTags%5D%5B1%5D%5Bkey%5D=drone&sfm%5BsimpleSearch%5D%5BkeywordTags%5D%5B1%5D%5Bvalue%5D=drone&sfm%5BsimpleSearch%5D%5BkeywordTags%5D%5B2%5D%5Bkey%5D=suas&sfm%5BsimpleSearch%5D%5BkeywordTags%5D%5B2%5D%5Bvalue%5D=suas&sfm%5BsimpleSearch%5D%5BkeywordTags%5D%5B3%5D%5Bkey%5D=fpv&sfm%5BsimpleSearch%5D%5BkeywordTags%5D%5B3%5D%5Bvalue%5D=fpv&sfm%5BsimpleSearch%5D%5BkeywordTags%5D%5B4%5D%5Bkey%5D=uas&sfm%5BsimpleSearch%5D%5BkeywordTags%5D%5B4%5D%5Bvalue%5D=uas&sfm%5BsimpleSearch%5D%5BkeywordTags%5D%5B5%5D%5Bkey%5D=uav&sfm%5BsimpleSearch%5D%5BkeywordTags%5D%5B5%5D%5Bvalue%5D=uav&sfm%5Bstatus%5D%5Bis_active%5D=true")
 
 # --- Configuration ---
 STABLE_ITERATIONS = 5       # Number of consecutive stable checks before considering page loaded
