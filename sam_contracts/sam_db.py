@@ -35,11 +35,8 @@ class TursoClient:
     def __init__(self, db_url=None, auth_token=None):
         url = db_url or os.getenv("TURSO_DATABASE_URL", "")
         self.token = auth_token or os.getenv("TURSO_AUTH_TOKEN", "")
-        # Convert libsql:// → https:// for the HTTP endpoint
         self.base_url = url.replace("libsql://", "https://")
         self.pipeline_url = f"{self.base_url}/v2/pipeline"
-
-    # -- internals ----------------------------------------------------------
 
     def _headers(self):
         return {
@@ -49,7 +46,6 @@ class TursoClient:
 
     @staticmethod
     def _typed_value(v):
-        """Wrap a Python value into a Turso typed-value dict."""
         if v is None:
             return {"type": "null"}
         if isinstance(v, bool):
@@ -71,7 +67,6 @@ class TursoClient:
 
     @staticmethod
     def _parse_result(result):
-        """Turn a pipeline result into {columns, rows}."""
         if result["type"] == "error":
             raise Exception(f"Turso error: {result['error']['message']}")
         resp = result["response"]["result"]
@@ -84,10 +79,7 @@ class TursoClient:
             ))
         return {"columns": columns, "rows": rows}
 
-    # -- public -------------------------------------------------------------
-
     def execute(self, sql, params=None):
-        """Run one statement and return {columns, rows}."""
         body = {
             "requests": [
                 {"type": "execute", "stmt": self._make_stmt(sql, params)},
@@ -99,22 +91,15 @@ class TursoClient:
         return self._parse_result(resp.json()["results"][0])
 
     def batch(self, statements):
-        """
-        Run many statements in one HTTP round-trip.
-
-        *statements* is a list of (sql, params_or_None) tuples.
-        """
         reqs = [
             {"type": "execute", "stmt": self._make_stmt(sql, params)}
             for sql, params in statements
         ]
         reqs.append({"type": "close"})
-
         resp = _requests.post(
             self.pipeline_url, json={"requests": reqs}, headers=self._headers()
         )
         resp.raise_for_status()
-
         results = resp.json()["results"]
         for i, r in enumerate(results):
             if r.get("type") == "error":
@@ -124,7 +109,6 @@ class TursoClient:
         return results
 
     def close(self):
-        """No-op — kept for API compatibility."""
         pass
 
 
@@ -150,7 +134,8 @@ _SCHEMA = [
         name        TEXT,
         email       TEXT,
         phone       TEXT,
-        fingerprint TEXT UNIQUE
+        fingerprint TEXT UNIQUE,
+        mail_status TEXT DEFAULT 'unmailed'
     )
     """,
     """
@@ -177,11 +162,9 @@ _SCHEMA = [
     """,
 ]
 
-# Migrations for databases created before the status/addresses columns existed.
-# ALTER TABLE … ADD COLUMN is a no-op if the column already exists in Turso/SQLite ≥ 3.35,
-# but we wrap each in its own execute to tolerate "duplicate column" errors gracefully.
 _MIGRATIONS = [
     "ALTER TABLE notices ADD COLUMN status TEXT DEFAULT 'new'",
+    "ALTER TABLE contacts ADD COLUMN mail_status TEXT DEFAULT 'unmailed'",
 ]
 
 
@@ -190,32 +173,21 @@ _MIGRATIONS = [
 # ---------------------------------------------------------------------------
 
 def normalize_date(raw_date):
-    """
-    Best-effort normalisation of a date string to ISO 8601.
-
-    The link scraper should already normalise dates, but this acts as a safety
-    net so the  scraped_at < updated_date  comparison in get_stale_notices
-    always compares like-for-like.
-    """
     if not raw_date:
         return raw_date
-
-    # Already ISO-ish (starts with YYYY-MM-DD)
     if re.match(r"^\d{4}-\d{2}-\d{2}", raw_date):
         return raw_date
-
     formats = [
-        "%b %d, %Y",   # Jan 15, 2025
-        "%B %d, %Y",   # January 15, 2025
-        "%m/%d/%Y",    # 01/15/2025
+        "%b %d, %Y",
+        "%B %d, %Y",
+        "%m/%d/%Y",
     ]
     for fmt in formats:
         try:
             return datetime.strptime(raw_date.strip(), fmt).strftime("%Y-%m-%dT%H:%M:%S")
         except ValueError:
             continue
-
-    logger.warning(f"normalize_date: could not parse '{raw_date}' – storing as-is")
+    logger.warning(f"normalize_date: could not parse '{raw_date}' — storing as-is")
     return raw_date
 
 
@@ -224,21 +196,16 @@ def normalize_date(raw_date):
 # ---------------------------------------------------------------------------
 
 def connect():
-    """Return a TursoClient configured from .env."""
     return TursoClient()
 
 
 def init_schema(client):
-    """Create tables if they don't already exist, then run migrations."""
     client.batch([(sql.strip(), None) for sql in _SCHEMA])
-
-    # Run migrations individually — each may fail if already applied
     for sql in _MIGRATIONS:
         try:
             client.execute(sql)
         except Exception:
-            pass  # column already exists
-
+            pass
     logger.info("Schema initialised.")
 
 
@@ -250,18 +217,11 @@ def contact_fingerprint(name, email, phone):
 
 
 def address_fingerprint(raw_address):
-    """Deduplicate addresses by normalised content hash."""
     normalised = (raw_address or "").strip().lower()
     return hashlib.sha256(normalised.encode()).hexdigest()[:16]
 
 
 def upsert_notice(client, notice):
-    """
-    Upsert an index-scraper row.
-    Expects dict with: notice_id, title, href, updated_date.
-    Does NOT set scraped_at — only the detail scraper does that.
-    Does NOT touch status — preserving user's triage decision.
-    """
     client.execute(
         """
         INSERT INTO notices (notice_id, title, href, updated_date)
@@ -281,17 +241,7 @@ def upsert_notice(client, notice):
 
 
 def upsert_notice_detail(client, detail):
-    """
-    Update a notice with detail-scraper data and link contacts.
-    Expects dict with: notice_id, title, url, contacts, address.
-    Each contact is {name, email, phone}.
-    Sets scraped_at and resets status to 'new' so the user reviews it again.
-    Also upserts the address into the addresses table.
-    """
     raw_address = "\n".join(detail.get("address", []))
-
-    # Update notice — reset status to 'new' on re-scrape.
-    # COALESCE keeps the existing title if the detail scraper returned None.
     client.execute(
         """
         UPDATE notices SET
@@ -309,10 +259,8 @@ def upsert_notice_detail(client, detail):
         },
     )
 
-    # Upsert address row (fingerprinted, like contacts)
     if raw_address.strip():
         fp = address_fingerprint(raw_address)
-
         client.execute(
             """
             INSERT INTO addresses (raw_address, fingerprint)
@@ -322,7 +270,6 @@ def upsert_notice_detail(client, detail):
             """,
             {"addr": raw_address, "fp": fp},
         )
-
         rs = client.execute(
             "SELECT id FROM addresses WHERE fingerprint = :fp", {"fp": fp}
         )
@@ -335,12 +282,10 @@ def upsert_notice_detail(client, detail):
                 {"nid": detail["notice_id"], "aid": int(rs["rows"][0][0])},
             )
 
-    # Upsert contacts
     for contact in detail.get("contacts", []):
         fp = contact_fingerprint(
             contact.get("name"), contact.get("email"), contact.get("phone")
         )
-
         client.execute(
             """
             INSERT INTO contacts (name, email, phone, fingerprint)
@@ -357,7 +302,6 @@ def upsert_notice_detail(client, detail):
                 "fp":    fp,
             },
         )
-
         rs = client.execute(
             "SELECT id FROM contacts WHERE fingerprint = :fp", {"fp": fp}
         )
@@ -372,11 +316,6 @@ def upsert_notice_detail(client, detail):
 
 
 def get_stale_notices(client):
-    """
-    Return notices that need detail scraping:
-      - scraped_at is NULL (never detail-scraped), OR
-      - scraped_at < updated_date (listing changed since last detail scrape)
-    """
     rs = client.execute(
         """
         SELECT notice_id, title, href, updated_date
