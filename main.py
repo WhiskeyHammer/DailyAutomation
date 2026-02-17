@@ -173,8 +173,7 @@ async def run_sam_pipeline():
             for i, detail in enumerate(details):
                 if "error" not in detail:
                     # Use the known notice_id from DB if scraper didn't find one
-                    if not detail.get("notice_id"):
-                        detail["notice_id"] = stale[i]["notice_id"]
+                    detail["notice_id"] = stale[i]["notice_id"]
                     upsert_notice_detail(db, detail)
             logger.info(f"Detail-scraped {len(details)} notices")
 
