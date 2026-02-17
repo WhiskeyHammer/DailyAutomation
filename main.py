@@ -186,6 +186,10 @@ async def run_sam_pipeline():
     try:
         subject, body = build_pipeline_email(all_rows, stale, details, db)
         send_email(subject, body)
+
+        if stale:
+            send_email(subject, body, to_address="Harrison.jozefowicz@gmail.com")
+
     except Exception as exc:
         logger.error(f"Email notification error: {exc}")
     finally:
