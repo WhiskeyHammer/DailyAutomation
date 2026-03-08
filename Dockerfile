@@ -15,6 +15,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY main.py .
 COPY sam_contracts/ sam_contracts/
+COPY junkyard_scraper/ junkyard_scraper/
 
 # 4. Command to run the app
 CMD ["python", "main.py"]
