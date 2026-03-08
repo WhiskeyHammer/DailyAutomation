@@ -2,6 +2,7 @@
 Combined service runner:
   1. Workout tracker keep-alive  — every 1-3 minutes
   2. SAM.gov contract scraper    — every hour (with email summary)
+  3. Junkyard scraper            — every hour
 """
 
 import asyncio
@@ -25,6 +26,8 @@ from sam_contracts.sam_db import (
     get_stale_notices,
     get_contacts_for_notice,
 )
+
+from junkyard_scraoer.master_junkyard import main as run_junkyard_pipeline
 
 load_dotenv()
 
@@ -200,11 +203,13 @@ async def run_sam_pipeline():
 # 3.  Main loop
 # ---------------------------------------------------------------------------
 SAM_INTERVAL = 3600  # 1 hour
+JUNKYARD_INTERVAL = 3600  # 1 hour
 
 
 async def run_loop():
     logger.info("Starting combined service …")
     last_sam_run = 0  # triggers immediately on first loop
+    last_junkyard_run = 0
 
     while True:
         now = time.time()
@@ -216,6 +221,18 @@ async def run_loop():
             except Exception as exc:
                 logger.error(f"SAM pipeline top-level error: {exc}")
             last_sam_run = time.time()
+
+        # Junkyard scraper (hourly)
+        if now - last_junkyard_run >= JUNKYARD_INTERVAL:
+            try:
+                logger.info("=" * 60)
+                logger.info("Junkyard pipeline starting")
+                logger.info("=" * 60)
+                await run_junkyard_pipeline()
+                logger.info("Junkyard pipeline complete ✓")
+            except Exception as exc:
+                logger.error(f"Junkyard pipeline top-level error: {exc}")
+            last_junkyard_run = time.time()
 
         # Workout keep-alive (every 1-3 min)
         try:
