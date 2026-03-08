@@ -8,8 +8,8 @@ from email.mime.text import MIMEText
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from sam_contracts.sam_db import TursoClient
-from junkyard_scraoer.ace_scrape import scrape_ace_inventory
-from junkyard_scraoer.go_scraper import scrape_gopullit_inventory
+from junkyard_scraper.ace_scrape import scrape_ace_inventory
+from junkyard_scraper.go_scraper import scrape_gopullit_inventory
 
 def init_junkyard_schema(client):
     schema = [

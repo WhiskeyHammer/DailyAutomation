@@ -27,7 +27,7 @@ from sam_contracts.sam_db import (
     get_contacts_for_notice,
 )
 
-from junkyard_scraoer.master_junkyard import main as run_junkyard_pipeline
+from junkyard_scraper.master_junkyard import main as run_junkyard_pipeline
 
 load_dotenv()
 
