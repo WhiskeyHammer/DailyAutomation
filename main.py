@@ -10,6 +10,7 @@ import logging
 import os
 import random
 import smtplib
+import sys
 import time
 from email.mime.text import MIMEText
 
@@ -34,6 +35,9 @@ load_dotenv()
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
+    handlers=[
+        logging.StreamHandler(sys.stdout),  # Explicit stdout for container log visibility
+    ],
 )
 logger = logging.getLogger(__name__)
 
@@ -43,6 +47,13 @@ BROWSER_ARGS = [
     "--disable-dev-shm-usage",
     "--disable-gpu",
 ]
+
+# ---------------------------------------------------------------------------
+# Timeouts (seconds) — prevents hung browsers from blocking the loop forever
+# ---------------------------------------------------------------------------
+SAM_TIMEOUT = 900       # 15 minutes
+JUNKYARD_TIMEOUT = 600  # 10 minutes
+WORKOUT_TIMEOUT = 120   # 2 minutes
 
 # ---------------------------------------------------------------------------
 # Email
@@ -207,17 +218,26 @@ JUNKYARD_INTERVAL = 3600  # 1 hour
 
 
 async def run_loop():
-    logger.info("Starting combined service …")
+    logger.info("=== SERVICE STARTING ===")
+    logger.info(f"SAM timeout: {SAM_TIMEOUT}s | Junkyard timeout: {JUNKYARD_TIMEOUT}s | Workout timeout: {WORKOUT_TIMEOUT}s")
+    sys.stdout.flush()
+
     last_sam_run = 0  # triggers immediately on first loop
     last_junkyard_run = 0
+    loop_count = 0
 
     while True:
+        loop_count += 1
         now = time.time()
+        logger.info(f"--- Loop iteration {loop_count} | {time.strftime('%Y-%m-%d %H:%M:%S')} ---")
+        sys.stdout.flush()
 
         # SAM scraper (hourly)
         if now - last_sam_run >= SAM_INTERVAL:
             try:
-                await run_sam_pipeline()
+                await asyncio.wait_for(run_sam_pipeline(), timeout=SAM_TIMEOUT)
+            except asyncio.TimeoutError:
+                logger.error(f"SAM pipeline TIMED OUT after {SAM_TIMEOUT}s — moving on")
             except Exception as exc:
                 logger.error(f"SAM pipeline top-level error: {exc}")
             last_sam_run = time.time()
@@ -228,20 +248,25 @@ async def run_loop():
                 logger.info("=" * 60)
                 logger.info("Junkyard pipeline starting")
                 logger.info("=" * 60)
-                await run_junkyard_pipeline()
+                await asyncio.wait_for(run_junkyard_pipeline(), timeout=JUNKYARD_TIMEOUT)
                 logger.info("Junkyard pipeline complete ✓")
+            except asyncio.TimeoutError:
+                logger.error(f"Junkyard pipeline TIMED OUT after {JUNKYARD_TIMEOUT}s — moving on")
             except Exception as exc:
                 logger.error(f"Junkyard pipeline top-level error: {exc}")
             last_junkyard_run = time.time()
 
         # Workout keep-alive (every 1-3 min)
         try:
-            await check_workout_site()
+            await asyncio.wait_for(check_workout_site(), timeout=WORKOUT_TIMEOUT)
+        except asyncio.TimeoutError:
+            logger.error(f"Workout check TIMED OUT after {WORKOUT_TIMEOUT}s — moving on")
         except Exception as exc:
             logger.error(f"Workout check error: {exc}")
 
         sleep_secs = random.randint(60, 180)
         logger.info(f"Sleeping {sleep_secs}s …")
+        sys.stdout.flush()
         await asyncio.sleep(sleep_secs)
 
 

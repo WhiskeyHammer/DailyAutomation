@@ -81,7 +81,9 @@ async def scrape_gopullit_inventory(
     make: str = "DODGE",
     model: str = "DAKOTA",
     min_year: int = 1987,
-    max_year: int = 1996
+    max_year: int = 1996,
+    headless: bool = True,
+    browser_args: list = None,
 ) -> List[Dict[str, Any]]:
     """
     Scrape GO Pull-It inventory for specified location/make/model/year range.
@@ -92,13 +94,15 @@ async def scrape_gopullit_inventory(
         model: Vehicle model (default: DAKOTA)
         min_year: Minimum year inclusive (default: 1987)
         max_year: Maximum year inclusive (default: 1996)
+        headless: Run browser in headless mode (default: True)
+        browser_args: Additional browser arguments
     
     Returns:
         List of dictionaries with vehicle data (key-value pairs)
     """
     
     # Start browser
-    browser = await uc.start()
+    browser = await uc.start(headless=headless, browser_args=browser_args or [])
     
     try:
         # Navigate to inventory page
