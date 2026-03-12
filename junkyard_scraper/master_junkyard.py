@@ -10,14 +10,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from sam_contracts.sam_db import TursoClient
 from junkyard_scraper.ace_scrape import scrape_ace_inventory
 from junkyard_scraper.go_scraper import scrape_gopullit_inventory
-
-# Browser config for headless container environments (Koyeb, etc.)
-BROWSER_ARGS = [
-    "--no-sandbox",
-    "--disable-setuid-sandbox",
-    "--disable-dev-shm-usage",
-    "--disable-gpu",
-]
+from browser_config import BROWSER_ARGS, HEADLESS
 
 def init_junkyard_schema(client):
     schema = [
@@ -69,11 +62,11 @@ async def main():
     client = TursoClient()
     init_junkyard_schema(client)
     
-    ace_cars = await scrape_ace_inventory(headless=True, browser_args=BROWSER_ARGS)
+    ace_cars = await scrape_ace_inventory(headless=HEADLESS, browser_args=BROWSER_ARGS)
     for c in ace_cars:
         c['yard'] = 'Ace'
         
-    go_cars = await scrape_gopullit_inventory(headless=True, browser_args=BROWSER_ARGS)
+    go_cars = await scrape_gopullit_inventory(headless=HEADLESS, browser_args=BROWSER_ARGS)
     for c in go_cars:
         c['yard'] = 'GO'
         

@@ -29,6 +29,7 @@ from sam_contracts.sam_db import (
 )
 
 from junkyard_scraper.master_junkyard import main as run_junkyard_pipeline
+from browser_config import BROWSER_ARGS, HEADLESS
 
 load_dotenv()
 
@@ -40,13 +41,6 @@ logging.basicConfig(
     ],
 )
 logger = logging.getLogger(__name__)
-
-BROWSER_ARGS = [
-    "--no-sandbox",
-    "--disable-setuid-sandbox",
-    "--disable-dev-shm-usage",
-    "--disable-gpu",
-]
 
 # ---------------------------------------------------------------------------
 # Timeouts (seconds) — prevents hung browsers from blocking the loop forever
@@ -136,7 +130,7 @@ WORKOUT_URL = "https://workout-tracker-hxg5.onrender.com/"
 async def check_workout_site():
     browser = None
     try:
-        browser = await uc.start(headless=True, browser_args=BROWSER_ARGS)
+        browser = await uc.start(headless=HEADLESS, browser_args=BROWSER_ARGS)
         tab = await browser.get(WORKOUT_URL)
         logger.info(f"Checking {WORKOUT_URL} …")
         pw = await tab.select('input[type="password"]', timeout=15)
@@ -169,7 +163,7 @@ async def run_sam_pipeline():
 
     try:
         # Step 1: Scrape index pages
-        all_rows = await scrape_index(headless=True, browser_args=BROWSER_ARGS)
+        all_rows = await scrape_index(headless=HEADLESS, browser_args=BROWSER_ARGS)
 
         # Step 2: Upsert index rows to DB (does NOT set scraped_at)
         for row in all_rows:
@@ -183,7 +177,7 @@ async def run_sam_pipeline():
         # Step 4: Scrape details for stale notices + upsert
         if stale:
             urls = [row["href"] for row in stale]
-            details = await scrape_details(urls, headless=True, browser_args=BROWSER_ARGS)
+            details = await scrape_details(urls, headless=HEADLESS, browser_args=BROWSER_ARGS)
             for i, detail in enumerate(details):
                 if "error" not in detail:
                     # Use the known notice_id from DB if scraper didn't find one
