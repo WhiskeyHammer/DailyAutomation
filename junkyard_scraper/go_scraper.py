@@ -5,11 +5,14 @@ Includes VIN decoding via NHTSA API
 """
 
 import asyncio
+import logging
 import requests
 import nodriver as uc
 from typing import List, Dict, Any
 from datetime import datetime
 from bs4 import BeautifulSoup
+
+logger = logging.getLogger(__name__)
 
 
 def decode_vins(vin_list: List[str]) -> Dict[str, Dict[str, Any]]:
@@ -72,7 +75,7 @@ def decode_vins(vin_list: List[str]) -> Dict[str, Dict[str, Any]]:
         return decoded
         
     except Exception as e:
-        print(f"VIN decode error: {e}")
+        logger.error(f"VIN decode error: {e}")
         return {}
 
 
@@ -87,58 +90,71 @@ async def scrape_gopullit_inventory(
 ) -> List[Dict[str, Any]]:
     """
     Scrape GO Pull-It inventory for specified location/make/model/year range.
-    
-    Args:
-        location: Yard location (default: jacksonville-fl)
-        make: Vehicle make (default: DODGE)
-        model: Vehicle model (default: DAKOTA)
-        min_year: Minimum year inclusive (default: 1987)
-        max_year: Maximum year inclusive (default: 1996)
-        headless: Run browser in headless mode (default: True)
-        browser_args: Additional browser arguments
-    
-    Returns:
-        List of dictionaries with vehicle data (key-value pairs)
     """
     
+    inventory_url = f"https://gopullit.com/inventory/?location={location}&make={make}&model={model}"
+    
     # Start browser
+    logger.info(f"[GO-DIAG] Starting browser...")
     browser = await uc.start(headless=headless, browser_args=browser_args or [])
+    logger.info(f"[GO-DIAG] Browser started OK")
     
     try:
         # Navigate to inventory page
-        inventory_url = f"https://gopullit.com/inventory/?location={location}&make={make}&model={model}"
+        logger.info(f"[GO-DIAG] Navigating to {inventory_url}")
         page = await browser.get(inventory_url)
+        logger.info(f"[GO-DIAG] Initial navigation complete, sleeping 3s...")
         await page.sleep(3)
+        logger.info(f"[GO-DIAG] Sleep done")
         
         # Try to click on "SELECT LOCATION" to open dropdown
         try:
+            logger.info(f"[GO-DIAG] Looking for 'SELECT LOCATION' button (timeout=5)...")
             select_location = await page.find("SELECT LOCATION", timeout=5)
             if select_location:
+                logger.info(f"[GO-DIAG] Found 'SELECT LOCATION', clicking...")
                 await select_location.click()
+                logger.info(f"[GO-DIAG] Clicked, sleeping 1s...")
                 await page.sleep(1)
                 
                 # Click on Jacksonville, FL
+                logger.info(f"[GO-DIAG] Looking for 'Jacksonville, FL' (timeout=5)...")
                 jax_link = await page.find("Jacksonville, FL", timeout=5)
                 if jax_link:
+                    logger.info(f"[GO-DIAG] Found 'Jacksonville, FL', clicking...")
                     await jax_link.click()
+                    logger.info(f"[GO-DIAG] Clicked, sleeping 3s...")
                     await page.sleep(3)
-        except:
-            pass
+                else:
+                    logger.info(f"[GO-DIAG] 'Jacksonville, FL' NOT found")
+            else:
+                logger.info(f"[GO-DIAG] 'SELECT LOCATION' NOT found")
+        except Exception as e:
+            logger.info(f"[GO-DIAG] Location selection failed (non-fatal): {e}")
         
         # Navigate again to ensure we're on the right page with location set
+        logger.info(f"[GO-DIAG] Second navigation to {inventory_url}")
         page = await browser.get(inventory_url)
+        logger.info(f"[GO-DIAG] Second navigation complete, sleeping 5s...")
         await page.sleep(5)
+        logger.info(f"[GO-DIAG] Sleep done")
         
         # Wait for table to load
-        for _ in range(10):
+        logger.info(f"[GO-DIAG] Entering tbody wait loop (max 10 iterations)...")
+        page_source = None
+        for attempt in range(10):
             page_source = await page.get_content()
-            if page_source and '<tbody' in page_source.lower():
+            has_tbody = page_source and '<tbody' in page_source.lower()
+            logger.info(f"[GO-DIAG]   tbody check {attempt+1}/10: content_len={len(page_source) if page_source else 0}, has_tbody={has_tbody}")
+            if has_tbody:
                 break
             await page.sleep(1)
         
         if not page_source:
-            print("Could not get page source")
+            logger.warning("[GO-DIAG] Could not get page source after all attempts")
             return []
+        
+        logger.info(f"[GO-DIAG] Got page source ({len(page_source)} chars), parsing with BeautifulSoup...")
         
         # Parse with BeautifulSoup
         soup = BeautifulSoup(page_source, 'html.parser')
@@ -147,8 +163,13 @@ async def scrape_gopullit_inventory(
         table = soup.find('table')
         
         if not table:
-            print("No inventory table found in page source")
+            logger.warning("[GO-DIAG] No inventory table found in page source")
+            # Log a snippet of the page to help debug
+            snippet = page_source[:2000] if page_source else "(empty)"
+            logger.info(f"[GO-DIAG] Page source snippet:\n{snippet}")
             return []
+        
+        logger.info(f"[GO-DIAG] Found table, extracting rows...")
         
         # Get all rows from tbody (data rows)
         tbody = table.find('tbody')
@@ -158,8 +179,10 @@ async def scrape_gopullit_inventory(
             # Fallback: get all rows and skip header
             rows = table.find_all('tr')[1:]
         
+        logger.info(f"[GO-DIAG] Found {len(rows)} table rows")
+        
         if not rows:
-            print("No data rows found in table")
+            logger.warning("[GO-DIAG] No data rows found in table")
             return []
         
         vehicles = []
@@ -170,10 +193,6 @@ async def scrape_gopullit_inventory(
                 
                 if len(cells) < 7:
                     continue
-                
-                # Extract text from each cell
-                # Columns: MAKE(0), MODEL(1), YEAR(2), ROW(3), VIN(4), STOCK NUMBER(5), 
-                #          DATE PLACED IN YARD(6), LOCATION(7), IMAGES(8), MORE INFO(9)
                 
                 make_val = cells[0].get_text(strip=True)
                 model_val = cells[1].get_text(strip=True)
@@ -200,14 +219,14 @@ async def scrape_gopullit_inventory(
                         try:
                             date_in_yard = datetime.strptime(date_val, "%m/%d/%y").date().isoformat()
                         except ValueError:
-                            date_in_yard = date_val  # Keep original if can't parse
+                            date_in_yard = date_val
                     
                     vehicle = {
                         "year": year,
                         "make": make_val,
                         "model": model_val,
-                        "engine": None,  # Not available on GO Pull-It
-                        "transmission": None,  # Not available on GO Pull-It
+                        "engine": None,
+                        "transmission": None,
                         "stock_number": stock_val,
                         "row_location": row_val,
                         "date_in_yard": date_in_yard,
@@ -218,18 +237,22 @@ async def scrape_gopullit_inventory(
                     vehicles.append(vehicle)
                     
             except Exception as e:
-                print(f"Error processing row: {e}")
+                logger.error(f"[GO-DIAG] Error processing row: {e}")
                 continue
         
+        logger.info(f"[GO-DIAG] Returning {len(vehicles)} matching vehicles")
         return vehicles
         
     finally:
-        # Close browser
+        logger.info(f"[GO-DIAG] Stopping browser...")
         browser.stop()
+        logger.info(f"[GO-DIAG] Browser stopped")
 
 
 async def main():
     """Main entry point for the scraper."""
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+    
     print("Scraping GO Pull-It Jacksonville for Dodge Dakota 1987-1996...")
     
     vehicles = await scrape_gopullit_inventory(
