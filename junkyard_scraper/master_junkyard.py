@@ -16,6 +16,9 @@ from junkyard_scraper.ace_scrape import scrape_ace_inventory
 from junkyard_scraper.go_scraper import scrape_gopullit_inventory
 from browser_config import BROWSER_ARGS, HEADLESS
 
+MAX_SCRAPER_RETRIES = 3
+RETRY_DELAY = 5  # seconds
+
 
 def init_junkyard_schema(client):
     schema = [
@@ -63,28 +66,49 @@ def format_car_table(title, cars):
         lines.append(f"{yard:<6} | {yr:<4} | {make:<6} | {model:<8} | {eng:<15} | {row:<6} | {din:<10} | {stk:<8}")
     return "\n".join(lines) + "\n\n"
 
+
+async def scrape_with_retry(name, scrape_fn, **kwargs):
+    """Run a scraper function with retries on failure."""
+    for attempt in range(1, MAX_SCRAPER_RETRIES + 1):
+        try:
+            result = await scrape_fn(**kwargs)
+            if attempt > 1:
+                logger.info(f"{name} succeeded on attempt {attempt}")
+            return result
+        except Exception as e:
+            logger.error(f"{name} attempt {attempt}/{MAX_SCRAPER_RETRIES} failed: {e}")
+            if attempt < MAX_SCRAPER_RETRIES:
+                logger.info(f"{name} retrying in {RETRY_DELAY}s...")
+                await asyncio.sleep(RETRY_DELAY)
+            else:
+                logger.error(f"{name} FAILED after {MAX_SCRAPER_RETRIES} attempts\n{traceback.format_exc()}")
+    return []
+
+
 async def main():
     client = TursoClient()
     init_junkyard_schema(client)
     
-    # --- Ace scraper ---
-    ace_cars = []
-    try:
-        ace_cars = await scrape_ace_inventory(headless=HEADLESS, browser_args=BROWSER_ARGS)
-        logger.info(f"Ace scraper returned {len(ace_cars)} cars")
-    except Exception as e:
-        logger.error(f"Ace scraper FAILED: {e}\n{traceback.format_exc()}")
+    # --- Ace scraper (with retry) ---
+    ace_cars = await scrape_with_retry(
+        "Ace scraper",
+        scrape_ace_inventory,
+        headless=HEADLESS,
+        browser_args=BROWSER_ARGS,
+    )
+    logger.info(f"Ace scraper returned {len(ace_cars)} cars")
     
     for c in ace_cars:
         c['yard'] = 'Ace'
         
-    # --- GO Pull-It scraper ---
-    go_cars = []
-    try:
-        go_cars = await scrape_gopullit_inventory(headless=HEADLESS, browser_args=BROWSER_ARGS)
-        logger.info(f"GO Pull-It scraper returned {len(go_cars)} cars")
-    except Exception as e:
-        logger.error(f"GO Pull-It scraper FAILED: {e}\n{traceback.format_exc()}")
+    # --- GO Pull-It scraper (with retry) ---
+    go_cars = await scrape_with_retry(
+        "GO Pull-It scraper",
+        scrape_gopullit_inventory,
+        headless=HEADLESS,
+        browser_args=BROWSER_ARGS,
+    )
+    logger.info(f"GO Pull-It scraper returned {len(go_cars)} cars")
     
     for c in go_cars:
         c['yard'] = 'GO'
