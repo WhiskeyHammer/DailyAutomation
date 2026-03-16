@@ -1,7 +1,7 @@
 """
 Combined service runner:
   1. Workout tracker keep-alive  — every 1-3 minutes
-  2. Junkyard scraper            — every hour (NOW FIRST)
+  2. Junkyard scraper            — every hour
   3. SAM.gov contract scraper    — every hour (with email summary)
 """
 
@@ -84,7 +84,7 @@ async def run_loop():
         logger.info(f"--- Loop iteration {loop_count} | {time.strftime('%Y-%m-%d %H:%M:%S')} ---")
         sys.stdout.flush()
 
-        # Junkyard scraper FIRST (hourly)
+        # Junkyard scraper (hourly) — runs first
         if now - last_junkyard_run >= JUNKYARD_INTERVAL:
             try:
                 logger.info("=" * 60)

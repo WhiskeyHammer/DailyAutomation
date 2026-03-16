@@ -18,20 +18,11 @@ logger = logging.getLogger(__name__)
 def decode_vins(vin_list: List[str]) -> Dict[str, Dict[str, Any]]:
     """
     Decode VINs using NHTSA vPIC API.
-    
-    Args:
-        vin_list: List of VIN strings to decode
-    
-    Returns:
-        Dictionary mapping VIN to decoded data
     """
     if not vin_list:
         return {}
     
     base_url = "https://vpic.nhtsa.dot.gov/api/vehicles/DecodeVINValuesBatch/"
-    
-    # The API prefers batches of 50 or fewer
-    # Format: VIN;VIN;VIN (semicolon separated)
     vins_string = ";".join(vin_list)
     
     payload = {
@@ -48,11 +39,9 @@ def decode_vins(vin_list: List[str]) -> Dict[str, Dict[str, Any]]:
         for entry in results:
             vin = entry.get("VIN")
             if vin:
-                # Get displacement and cylinders
                 displacement = entry.get("DisplacementL", "")
                 cylinders = entry.get("EngineCylinders", "")
                 
-                # Build engine string
                 if displacement and cylinders:
                     engine = f"{displacement}L {cylinders}cyl"
                 elif displacement:
@@ -94,95 +83,68 @@ async def scrape_gopullit_inventory(
     
     inventory_url = f"https://gopullit.com/inventory/?location={location}&make={make}&model={model}"
     
-    # Start browser
-    logger.info(f"[GO-DIAG] Starting browser...")
+    logger.info(f"[GO] Starting browser...")
     browser = await uc.start(headless=headless, browser_args=browser_args or [])
-    logger.info(f"[GO-DIAG] Browser started OK")
+    logger.info(f"[GO] Browser started OK")
     
     try:
         # Navigate to inventory page
-        logger.info(f"[GO-DIAG] Navigating to {inventory_url}")
+        logger.info(f"[GO] Navigating to {inventory_url}")
         page = await browser.get(inventory_url)
-        logger.info(f"[GO-DIAG] Initial navigation complete, sleeping 3s...")
         await page.sleep(3)
-        logger.info(f"[GO-DIAG] Sleep done")
         
         # Try to click on "SELECT LOCATION" to open dropdown
         try:
-            logger.info(f"[GO-DIAG] Looking for 'SELECT LOCATION' button (timeout=5)...")
+            logger.info(f"[GO] Looking for 'SELECT LOCATION' button...")
             select_location = await page.find("SELECT LOCATION", timeout=5)
             if select_location:
-                logger.info(f"[GO-DIAG] Found 'SELECT LOCATION', clicking...")
                 await select_location.click()
-                logger.info(f"[GO-DIAG] Clicked, sleeping 1s...")
                 await page.sleep(1)
                 
-                # Click on Jacksonville, FL
-                logger.info(f"[GO-DIAG] Looking for 'Jacksonville, FL' (timeout=5)...")
+                logger.info(f"[GO] Looking for 'Jacksonville, FL'...")
                 jax_link = await page.find("Jacksonville, FL", timeout=5)
                 if jax_link:
-                    logger.info(f"[GO-DIAG] Found 'Jacksonville, FL', clicking...")
                     await jax_link.click()
-                    logger.info(f"[GO-DIAG] Clicked, sleeping 3s...")
                     await page.sleep(3)
-                else:
-                    logger.info(f"[GO-DIAG] 'Jacksonville, FL' NOT found")
-            else:
-                logger.info(f"[GO-DIAG] 'SELECT LOCATION' NOT found")
         except Exception as e:
-            logger.info(f"[GO-DIAG] Location selection failed (non-fatal): {e}")
+            logger.info(f"[GO] Location selection skipped: {e}")
         
         # Navigate again to ensure we're on the right page with location set
-        logger.info(f"[GO-DIAG] Second navigation to {inventory_url}")
+        logger.info(f"[GO] Second navigation to inventory page")
         page = await browser.get(inventory_url)
-        logger.info(f"[GO-DIAG] Second navigation complete, sleeping 5s...")
         await page.sleep(5)
-        logger.info(f"[GO-DIAG] Sleep done")
         
         # Wait for table to load
-        logger.info(f"[GO-DIAG] Entering tbody wait loop (max 10 iterations)...")
         page_source = None
         for attempt in range(10):
             page_source = await page.get_content()
-            has_tbody = page_source and '<tbody' in page_source.lower()
-            logger.info(f"[GO-DIAG]   tbody check {attempt+1}/10: content_len={len(page_source) if page_source else 0}, has_tbody={has_tbody}")
-            if has_tbody:
+            if page_source and '<tbody' in page_source.lower():
+                logger.info(f"[GO] Found tbody on attempt {attempt+1}")
                 break
             await page.sleep(1)
         
         if not page_source:
-            logger.warning("[GO-DIAG] Could not get page source after all attempts")
+            logger.warning("[GO] Could not get page source")
             return []
-        
-        logger.info(f"[GO-DIAG] Got page source ({len(page_source)} chars), parsing with BeautifulSoup...")
         
         # Parse with BeautifulSoup
         soup = BeautifulSoup(page_source, 'html.parser')
-        
-        # Find the inventory table
         table = soup.find('table')
         
         if not table:
-            logger.warning("[GO-DIAG] No inventory table found in page source")
-            # Log a snippet of the page to help debug
-            snippet = page_source[:2000] if page_source else "(empty)"
-            logger.info(f"[GO-DIAG] Page source snippet:\n{snippet}")
+            logger.warning("[GO] No inventory table found")
             return []
-        
-        logger.info(f"[GO-DIAG] Found table, extracting rows...")
         
         # Get all rows from tbody (data rows)
         tbody = table.find('tbody')
         if tbody:
             rows = tbody.find_all('tr')
         else:
-            # Fallback: get all rows and skip header
             rows = table.find_all('tr')[1:]
         
-        logger.info(f"[GO-DIAG] Found {len(rows)} table rows")
+        logger.info(f"[GO] Found {len(rows)} table rows")
         
         if not rows:
-            logger.warning("[GO-DIAG] No data rows found in table")
             return []
         
         vehicles = []
@@ -202,18 +164,15 @@ async def scrape_gopullit_inventory(
                 stock_val = cells[5].get_text(strip=True)
                 date_val = cells[6].get_text(strip=True)
                 
-                # Parse year as integer
                 try:
                     year = int(year_str)
                 except ValueError:
                     continue
                 
-                # Filter by make, model, and year range
                 if (make_val.upper() == make.upper() and 
                     model_val.upper() == model.upper() and 
                     min_year <= year <= max_year):
                     
-                    # Parse date if possible (format: MM/DD/YY)
                     date_in_yard = None
                     if date_val and date_val.strip():
                         try:
@@ -237,16 +196,15 @@ async def scrape_gopullit_inventory(
                     vehicles.append(vehicle)
                     
             except Exception as e:
-                logger.error(f"[GO-DIAG] Error processing row: {e}")
+                logger.error(f"[GO] Error processing row: {e}")
                 continue
         
-        logger.info(f"[GO-DIAG] Returning {len(vehicles)} matching vehicles")
+        logger.info(f"[GO] Returning {len(vehicles)} matching vehicles")
         return vehicles
         
     finally:
-        logger.info(f"[GO-DIAG] Stopping browser...")
+        logger.info(f"[GO] Stopping browser...")
         browser.stop()
-        logger.info(f"[GO-DIAG] Browser stopped")
 
 
 async def main():
@@ -269,13 +227,9 @@ async def main():
     
     print(f"\nFound {len(vehicles)} vehicles. Decoding VINs...")
     
-    # Get list of VINs to decode
     vins = [v["vin"] for v in vehicles if v.get("vin")]
-    
-    # Decode VINs using NHTSA API
     vin_data = decode_vins(vins)
     
-    # Enrich vehicle data with VIN decoded info
     for vehicle in vehicles:
         vin = vehicle.get("vin")
         if vin and vin in vin_data:
@@ -286,7 +240,6 @@ async def main():
     
     print(f"\nEnriched {len(vehicles)} vehicles with VIN data:\n")
     
-    # Print each vehicle as key-value pairs
     for i, vehicle in enumerate(vehicles, 1):
         print(f"--- Vehicle {i} ---")
         for key, value in vehicle.items():

@@ -11,33 +11,10 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 logger = logging.getLogger(__name__)
 
-try:
-    from sam_contracts.sam_db import TursoClient
-    logger.info("[DIAG] Imported TursoClient OK")
-except Exception as e:
-    logger.error(f"[DIAG] Failed to import TursoClient: {e}")
-    raise
-
-try:
-    from junkyard_scraper.ace_scrape import scrape_ace_inventory
-    logger.info("[DIAG] Imported scrape_ace_inventory OK")
-except Exception as e:
-    logger.error(f"[DIAG] Failed to import ace_scrape: {e}")
-    raise
-
-try:
-    from junkyard_scraper.go_scraper import scrape_gopullit_inventory
-    logger.info("[DIAG] Imported scrape_gopullit_inventory OK")
-except Exception as e:
-    logger.error(f"[DIAG] Failed to import go_scraper: {e}")
-    raise
-
-try:
-    from browser_config import BROWSER_ARGS, HEADLESS
-    logger.info(f"[DIAG] Browser config loaded: HEADLESS={HEADLESS}, ARGS={BROWSER_ARGS}")
-except Exception as e:
-    logger.error(f"[DIAG] Failed to import browser_config: {e}")
-    raise
+from sam_contracts.sam_db import TursoClient
+from junkyard_scraper.ace_scrape import scrape_ace_inventory
+from junkyard_scraper.go_scraper import scrape_gopullit_inventory
+from browser_config import BROWSER_ARGS, HEADLESS
 
 
 def init_junkyard_schema(client):
@@ -87,28 +64,16 @@ def format_car_table(title, cars):
     return "\n".join(lines) + "\n\n"
 
 async def main():
-    logger.info("[DIAG] main() entered")
-    
-    # --- DB init ---
-    try:
-        logger.info("[DIAG] Connecting to Turso...")
-        client = TursoClient()
-        logger.info("[DIAG] Turso connected, initializing schema...")
-        init_junkyard_schema(client)
-        logger.info("[DIAG] Schema initialized OK")
-    except Exception as e:
-        logger.error(f"[DIAG] DB init failed: {e}\n{traceback.format_exc()}")
-        return
+    client = TursoClient()
+    init_junkyard_schema(client)
     
     # --- Ace scraper ---
     ace_cars = []
     try:
-        logger.info("[DIAG] >>> Starting Ace scraper...")
-        logger.info(f"[DIAG]     headless={HEADLESS}, browser_args={BROWSER_ARGS}")
         ace_cars = await scrape_ace_inventory(headless=HEADLESS, browser_args=BROWSER_ARGS)
-        logger.info(f"[DIAG] <<< Ace scraper returned {len(ace_cars)} cars")
+        logger.info(f"Ace scraper returned {len(ace_cars)} cars")
     except Exception as e:
-        logger.error(f"[DIAG] Ace scraper FAILED: {e}\n{traceback.format_exc()}")
+        logger.error(f"Ace scraper FAILED: {e}\n{traceback.format_exc()}")
     
     for c in ace_cars:
         c['yard'] = 'Ace'
@@ -116,19 +81,16 @@ async def main():
     # --- GO Pull-It scraper ---
     go_cars = []
     try:
-        logger.info("[DIAG] >>> Starting GO Pull-It scraper...")
-        logger.info(f"[DIAG]     headless={HEADLESS}, browser_args={BROWSER_ARGS}")
         go_cars = await scrape_gopullit_inventory(headless=HEADLESS, browser_args=BROWSER_ARGS)
-        logger.info(f"[DIAG] <<< GO Pull-It scraper returned {len(go_cars)} cars")
+        logger.info(f"GO Pull-It scraper returned {len(go_cars)} cars")
     except Exception as e:
-        logger.error(f"[DIAG] GO Pull-It scraper FAILED: {e}\n{traceback.format_exc()}")
+        logger.error(f"GO Pull-It scraper FAILED: {e}\n{traceback.format_exc()}")
+    
+    for c in go_cars:
+        c['yard'] = 'GO'
         
     all_cars = ace_cars + go_cars
-    logger.info(f"[DIAG] Total cars scraped: {len(all_cars)} (Ace={len(ace_cars)}, GO={len(go_cars)})")
-    
-    # --- Debug: log the keys of each car dict ---
-    for i, car in enumerate(all_cars):
-        logger.info(f"[DIAG] Car {i}: yard={car.get('yard', 'MISSING')}, stock={car.get('stock_number', 'MISSING')}, keys={list(car.keys())}")
+    logger.info(f"Total cars scraped: {len(all_cars)} (Ace={len(ace_cars)}, GO={len(go_cars)})")
     
     new_cars = []
     existing_cars = []
@@ -136,15 +98,15 @@ async def main():
     now = now_dt.isoformat()
     
     for car in all_cars:
+        yard = car['yard']
+        stock = car['stock_number']
         try:
-            yard = car['yard']
-            stock = car['stock_number']
-            logger.info(f"[DIAG] Upserting: yard={yard}, stock={stock}")
-            
-            rs = client.execute("SELECT first_seen_at FROM junkyard_vehicles WHERE yard = :y AND stock_number = :s", {'y': yard, 's': stock})
+            rs = client.execute(
+                "SELECT first_seen_at FROM junkyard_vehicles WHERE yard = :y AND stock_number = :s",
+                {'y': yard, 's': stock}
+            )
             
             if not rs['rows']:
-                logger.info(f"[DIAG]   -> INSERT (new car)")
                 client.execute(
                     "INSERT INTO junkyard_vehicles (yard, stock_number, year, make, model, engine, transmission, drive_type, vin, row_location, date_in_yard, first_seen_at, last_seen_at) "
                     "VALUES (:yard, :stock_number, :year, :make, :model, :engine, :transmission, :drive_type, :vin, :row_location, :date_in_yard, :now, :now)",
@@ -157,16 +119,15 @@ async def main():
                 )
                 new_cars.append(car)
             else:
-                logger.info(f"[DIAG]   -> UPDATE (existing car)")
                 client.execute(
                     "UPDATE junkyard_vehicles SET last_seen_at = :now, row_location = :row_location WHERE yard = :y AND stock_number = :s",
                     {'now': now, 'row_location': car.get('row_location'), 'y': yard, 's': stock}
                 )
                 existing_cars.append(car)
         except Exception as e:
-            logger.error(f"[DIAG] DB upsert FAILED for car {car}: {e}\n{traceback.format_exc()}")
+            logger.error(f"DB upsert FAILED for {yard}/{stock}: {e}\n{traceback.format_exc()}")
             
-    logger.info(f"[DIAG] DB results: {len(new_cars)} new, {len(existing_cars)} existing")
+    logger.info(f"DB results: {len(new_cars)} new, {len(existing_cars)} existing")
     
     should_send_email = False
     today_str = now_dt.strftime("%Y-%m-%d")
@@ -180,7 +141,6 @@ async def main():
             should_send_email = True
 
     if should_send_email:
-        logger.info("[DIAG] Sending email notification...")
         subject = f"Junkyard Scrape: {len(new_cars)} New, {len(existing_cars)} Existing"
         body = format_car_table("NEWLY SCRAPED CARS", new_cars) + format_car_table("ALL OTHER IN STOCK", existing_cars)
         send_email(subject, body)
@@ -191,7 +151,7 @@ async def main():
             {'val': today_str}
         )
     
-    logger.info("[DIAG] main() complete")
+    logger.info("Junkyard main() complete")
 
 if __name__ == "__main__":
     asyncio.run(main())
