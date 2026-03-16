@@ -11,7 +11,6 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 logger = logging.getLogger(__name__)
 
-# --- Diagnostic: log every import individually ---
 try:
     from sam_contracts.sam_db import TursoClient
     logger.info("[DIAG] Imported TursoClient OK")
@@ -127,18 +126,25 @@ async def main():
     all_cars = ace_cars + go_cars
     logger.info(f"[DIAG] Total cars scraped: {len(all_cars)} (Ace={len(ace_cars)}, GO={len(go_cars)})")
     
+    # --- Debug: log the keys of each car dict ---
+    for i, car in enumerate(all_cars):
+        logger.info(f"[DIAG] Car {i}: yard={car.get('yard', 'MISSING')}, stock={car.get('stock_number', 'MISSING')}, keys={list(car.keys())}")
+    
     new_cars = []
     existing_cars = []
     now_dt = datetime.now()
     now = now_dt.isoformat()
     
     for car in all_cars:
-        yard = car['yard']
-        stock = car['stock_number']
         try:
+            yard = car['yard']
+            stock = car['stock_number']
+            logger.info(f"[DIAG] Upserting: yard={yard}, stock={stock}")
+            
             rs = client.execute("SELECT first_seen_at FROM junkyard_vehicles WHERE yard = :y AND stock_number = :s", {'y': yard, 's': stock})
             
             if not rs['rows']:
+                logger.info(f"[DIAG]   -> INSERT (new car)")
                 client.execute(
                     "INSERT INTO junkyard_vehicles (yard, stock_number, year, make, model, engine, transmission, drive_type, vin, row_location, date_in_yard, first_seen_at, last_seen_at) "
                     "VALUES (:yard, :stock_number, :year, :make, :model, :engine, :transmission, :drive_type, :vin, :row_location, :date_in_yard, :now, :now)",
@@ -151,13 +157,14 @@ async def main():
                 )
                 new_cars.append(car)
             else:
+                logger.info(f"[DIAG]   -> UPDATE (existing car)")
                 client.execute(
                     "UPDATE junkyard_vehicles SET last_seen_at = :now, row_location = :row_location WHERE yard = :y AND stock_number = :s",
                     {'now': now, 'row_location': car.get('row_location'), 'y': yard, 's': stock}
                 )
                 existing_cars.append(car)
         except Exception as e:
-            logger.error(f"[DIAG] DB upsert failed for {yard}/{stock}: {e}")
+            logger.error(f"[DIAG] DB upsert FAILED for car {car}: {e}\n{traceback.format_exc()}")
             
     logger.info(f"[DIAG] DB results: {len(new_cars)} new, {len(existing_cars)} existing")
     

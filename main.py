@@ -1,8 +1,8 @@
 """
 Combined service runner:
   1. Workout tracker keep-alive  — every 1-3 minutes
-  2. SAM.gov contract scraper    — every hour (with email summary)
-  3. Junkyard scraper            — every hour
+  2. Junkyard scraper            — every hour (NOW FIRST)
+  3. SAM.gov contract scraper    — every hour (with email summary)
 """
 
 import asyncio
@@ -84,17 +84,7 @@ async def run_loop():
         logger.info(f"--- Loop iteration {loop_count} | {time.strftime('%Y-%m-%d %H:%M:%S')} ---")
         sys.stdout.flush()
 
-        # SAM scraper (hourly)
-        if now - last_sam_run >= SAM_INTERVAL:
-            try:
-                await asyncio.wait_for(run_sam_pipeline(), timeout=SAM_TIMEOUT)
-            except asyncio.TimeoutError:
-                logger.error(f"SAM pipeline TIMED OUT after {SAM_TIMEOUT}s — moving on")
-            except Exception as exc:
-                logger.error(f"SAM pipeline top-level error: {exc}")
-            last_sam_run = time.time()
-
-        # Junkyard scraper (hourly)
+        # Junkyard scraper FIRST (hourly)
         if now - last_junkyard_run >= JUNKYARD_INTERVAL:
             try:
                 logger.info("=" * 60)
@@ -107,6 +97,16 @@ async def run_loop():
             except Exception as exc:
                 logger.error(f"Junkyard pipeline top-level error: {exc}")
             last_junkyard_run = time.time()
+
+        # SAM scraper (hourly)
+        if now - last_sam_run >= SAM_INTERVAL:
+            try:
+                await asyncio.wait_for(run_sam_pipeline(), timeout=SAM_TIMEOUT)
+            except asyncio.TimeoutError:
+                logger.error(f"SAM pipeline TIMED OUT after {SAM_TIMEOUT}s — moving on")
+            except Exception as exc:
+                logger.error(f"SAM pipeline top-level error: {exc}")
+            last_sam_run = time.time()
 
         # Workout keep-alive (every 1-3 min)
         try:
