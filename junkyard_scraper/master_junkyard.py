@@ -153,27 +153,34 @@ async def main():
             
     logger.info(f"DB results: {len(new_cars)} new, {len(existing_cars)} existing")
     
-    should_send_email = False
+    # --- Email decision ---
+    # Always send on new cars immediately.
+    # Otherwise, send a daily digest on the first successful run of each day.
     today_str = now_dt.strftime("%Y-%m-%d")
+    
+    rs = client.execute("SELECT value FROM app_state WHERE key = 'last_junkyard_email_date'")
+    last_sent_date = rs['rows'][0][0] if rs['rows'] else ""
+    is_first_run_today = last_sent_date != today_str
 
-    if new_cars:
-        should_send_email = True
-    elif now_dt.hour == 8 and 0 <= now_dt.minute <= 10:
-        rs = client.execute("SELECT value FROM app_state WHERE key = 'last_junkyard_email_date'")
-        last_sent_date = rs['rows'][0][0] if rs['rows'] else ""
-        if last_sent_date != today_str:
-            should_send_email = True
+    should_send_email = bool(new_cars) or is_first_run_today
 
     if should_send_email:
-        subject = f"Junkyard Scrape: {len(new_cars)} New, {len(existing_cars)} Existing"
+        if new_cars:
+            subject = f"Junkyard Scrape: {len(new_cars)} NEW, {len(existing_cars)} Existing"
+        else:
+            subject = f"Junkyard Daily Digest: {len(existing_cars)} In Stock (no new)"
+        
         body = format_car_table("NEWLY SCRAPED CARS", new_cars) + format_car_table("ALL OTHER IN STOCK", existing_cars)
         send_email(subject, body)
+        logger.info(f"Email sent: {subject}")
         
         client.execute(
             "INSERT INTO app_state (key, value) VALUES ('last_junkyard_email_date', :val) "
             "ON CONFLICT(key) DO UPDATE SET value = :val",
             {'val': today_str}
         )
+    else:
+        logger.info("Skipping email — already sent today and no new cars")
     
     logger.info("Junkyard main() complete")
 
