@@ -39,8 +39,11 @@ COUNTIES = [
 # Generate timestamp for output files (down to the second)
 RUN_TIMESTAMP = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
 
-OUTPUT_FILE = os.path.join(PROJECT_ROOT, "data", "past_auctions", f"tax_sales_{RUN_TIMESTAMP}.csv")
-LOG_FILE = os.path.join(PROJECT_ROOT, "logs", f"tax_sale_scrape_{RUN_TIMESTAMP}.log")
+AUCTION_DIR = os.path.dirname(SCRIPT_DIR)
+OUTPUT_FILE = os.path.join(AUCTION_DIR, "past_auctions", f"tax_sales_{RUN_TIMESTAMP}.csv")
+LOG_FILE = os.path.join(AUCTION_DIR, "logs", f"tax_sale_scrape_{RUN_TIMESTAMP}.log")
+os.makedirs(os.path.dirname(OUTPUT_FILE), exist_ok=True)
+os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
 
 # --- Configure Logging ---
 logging.basicConfig(

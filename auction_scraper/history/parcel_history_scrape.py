@@ -26,9 +26,13 @@ PROXY_FILE = os.path.join(PROJECT_ROOT, "proxies.txt")
 # -------------------
 
 # Find the most recent tax_sales CSV file
-PAST_AUCTIONS_DIR = os.path.join(PROJECT_ROOT, "data", "past_auctions")
+AUCTION_DIR = os.path.dirname(SCRIPT_DIR)
+PAST_AUCTIONS_DIR = os.path.join(AUCTION_DIR, "past_auctions")
 tax_sales_files = glob.glob(os.path.join(PAST_AUCTIONS_DIR, "tax_sales_*.csv"))
 INPUT_CSV = sorted(tax_sales_files)[-1] if tax_sales_files else os.path.join(PAST_AUCTIONS_DIR, "tax_sales.csv")
+
+PARCEL_HISTORY_DIR = os.path.join(AUCTION_DIR, "parcel_history")
+os.makedirs(PARCEL_HISTORY_DIR, exist_ok=True)
 
 # Generate timestamp for output files (down to the second)
 RUN_TIMESTAMP = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
@@ -42,13 +46,13 @@ TEST_OVERRIDE = None
 # TEST_OVERRIDE = ("IGNORE_THIS_URL", "11/19/2025", "$18,900", "19-08-24-007802-044-00", "Clay")
 
 # Option B: Single County Override (set to None to process all counties)
-OVERRIDE_COUNTY = None
+OVERRIDE_COUNTY = "Clay"
 
 # --- COUNTY DEFINITIONS ---
 COUNTY_CONFIGS = {
     "Duval": {
         "banned_phrases": ["No Results Found"],
-        "output_file": os.path.join(PROJECT_ROOT, "data", "parcel_history", f"duval_assessment_and_flips_{RUN_TIMESTAMP}.csv"),
+        "output_file": os.path.join(AUCTION_DIR, "parcel_history", f"duval_assessment_and_flips_{RUN_TIMESTAMP}.csv"),
         "wait_target": "//*[@id='propValue']",
         "xp_val_bldg": '(//span[contains(@id,"BuildingValue")])[2]',
         "xp_val_land": '(//span[contains(@id,"LandValueMarket")])[2]',
@@ -60,7 +64,7 @@ COUNTY_CONFIGS = {
         "xp_vacant": './td[6]',
     },
     "Baker": {
-        "output_file": os.path.join(PROJECT_ROOT, "data", "parcel_history", f"baker_assessment_and_flips_{RUN_TIMESTAMP}.csv"),
+        "output_file": os.path.join(AUCTION_DIR, "parcel_history", f"baker_assessment_and_flips_{RUN_TIMESTAMP}.csv"),
         "wait_target": "//*[contains(text(), 'Value Information')]",
         "xp_val_bldg": '//div[contains(text(),"BUILDING VALUE:")]/following-sibling::div',
         "xp_val_land": '//div[contains(text(),"LAND VALUE:")]/following-sibling::div',
@@ -72,7 +76,7 @@ COUNTY_CONFIGS = {
         "xp_vacant": './td[5]',
     },
     "Clay": {
-        "output_file": os.path.join(PROJECT_ROOT, "data", "parcel_history", f"clay_assessment_and_flips_{RUN_TIMESTAMP}.csv"),
+        "output_file": os.path.join(AUCTION_DIR, "parcel_history", f"clay_assessment_and_flips_{RUN_TIMESTAMP}.csv"),
         # --- NEW SEARCH WORKFLOW CONFIG ---
         "click_agree": "//a[text()='Agree']",
         "search_url": "https://qpublic.schneidercorp.com/Application.aspx?AppID=830&LayerID=15008&PageTypeID=2&PageID=6754",
@@ -93,7 +97,7 @@ COUNTY_CONFIGS = {
         "xp_vacant": './td[8]',
     },
     "Nassau": {
-        "output_file": os.path.join(PROJECT_ROOT, "data", "parcel_history", f"nassau_assessment_and_flips_{RUN_TIMESTAMP}.csv"),
+        "output_file": os.path.join(AUCTION_DIR, "parcel_history", f"nassau_assessment_and_flips_{RUN_TIMESTAMP}.csv"),
         "wait_target": "SALES INFORMATION",
         "xp_val_bldg": '//table//tr[td[contains(text(),"Improved Value")]]/td[2]',
         "xp_val_land": '//table//tr[td[contains(text(),"Land Value")]]/td[2]',

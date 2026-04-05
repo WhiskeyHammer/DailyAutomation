@@ -9,9 +9,9 @@ from datetime import datetime
 
 # Define the scripts to run in order
 SCRIPTS = {
-    "Step 1 (Auctions)": "auction_scraper/history/past_tax_sale_scrape.py",  
-    "Step 2 (Parcel History)": "auction_scraper/history/parcel_history_scrape.py",  
-    "Step 3 (Verify)": "auction_scraper/history/verify_sale_flip_scrape_alignment.py"
+    "Step 1 (Auctions)": "history/past_tax_sale_scrape.py",
+    "Step 2 (Parcel History)": "history/parcel_history_scrape.py",
+    "Step 3 (Verify)": "history/verify_sale_flip_scrape_alignment.py"
 }
 
 # Generate timestamp for output files (down to the second)

@@ -10,13 +10,14 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(SCRIPT_DIR))
 
 # 1. The Master Input File (Where we got the leads)
 # Find the most recent tax_sales CSV file
-PAST_AUCTIONS_DIR = os.path.join(PROJECT_ROOT, "data", "past_auctions")
+AUCTION_DIR = os.path.dirname(SCRIPT_DIR)
+PAST_AUCTIONS_DIR = os.path.join(AUCTION_DIR, "past_auctions")
 tax_sales_files = glob.glob(os.path.join(PAST_AUCTIONS_DIR, "tax_sales_*.csv"))
 SOURCE_CSV = sorted(tax_sales_files)[-1] if tax_sales_files else os.path.join(PAST_AUCTIONS_DIR, "tax_sales.csv")
 
 # 2. The Output Files (Where we stored the results)
 # Using glob patterns to find the latest timestamped files
-PARCEL_HISTORY_DIR = os.path.join(PROJECT_ROOT, "data", "parcel_history")
+PARCEL_HISTORY_DIR = os.path.join(AUCTION_DIR, "parcel_history")
 TARGET_FILES = [
     os.path.join(PARCEL_HISTORY_DIR, "duval_assessment_and_flips_*.csv"),
     os.path.join(PARCEL_HISTORY_DIR, "nassau_assessment_and_flips_*.csv"),
