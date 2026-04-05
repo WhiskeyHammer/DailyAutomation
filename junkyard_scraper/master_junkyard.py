@@ -47,6 +47,54 @@ def send_email(subject, body):
     except Exception:
         pass
 
+
+def normalize_cars(cars):
+    """Normalize inventory results for stable comparison."""
+    normalized = []
+    for c in cars:
+        stock = str(c.get('stock_number', '') or '').strip()
+        year = str(c.get('year', ''))
+        make = str(c.get('make', '') or '').strip().upper()
+        model = str(c.get('model', '') or '').strip().upper()
+        vin = str(c.get('vin', '') or '').strip().upper()
+        normalized.append((stock, year, make, model, vin))
+    return tuple(sorted(normalized))
+
+
+def choose_consensus_result(attempt_results):
+    """Pick the most stable inventory from multiple scraper attempts."""
+    from collections import Counter, defaultdict
+
+    if not attempt_results:
+        return []
+
+    buckets = defaultdict(list)
+    for entry in attempt_results:
+        key = normalize_cars(entry['cars'])
+        buckets[key].append(entry['cars'])
+
+    if not buckets:
+        return []
+
+    most_common = Counter({key: len(values) for key, values in buckets.items()})
+    consensus_key, consensus_count = most_common.most_common(1)[0]
+
+    if consensus_count >= 2:
+        logger.info(f"Consensus reached on attempt result after {consensus_count} matching runs")
+        return buckets[consensus_key][0]
+
+    non_empty_runs = [entry['cars'] for entry in attempt_results if entry['cars']]
+    if non_empty_runs:
+        selected = max(non_empty_runs, key=len)
+        logger.info(
+            "No stable consensus was reached; selecting the largest non-empty result "
+            f"({len(selected)} cars) from {len(non_empty_runs)} successful runs"
+        )
+        return selected
+
+    return []
+
+
 def format_car_table(title, cars):
     if not cars:
         return f"{title}\nNone\n\n"
@@ -68,21 +116,41 @@ def format_car_table(title, cars):
 
 
 async def scrape_with_retry(name, scrape_fn, **kwargs):
-    """Run a scraper function with retries on failure."""
+    """Run a scraper function with retries until a stable inventory result is reached."""
+    attempt_results = []
+
     for attempt in range(1, MAX_SCRAPER_RETRIES + 1):
         try:
             result = await scrape_fn(**kwargs)
-            if attempt > 1:
-                logger.info(f"{name} succeeded on attempt {attempt}")
-            return result
+            attempt_results.append({'cars': result})
+
+            if attempt > 1 and normalize_cars(result) == normalize_cars(attempt_results[-2]['cars']):
+                logger.info(f"{name} stable result achieved on attempt {attempt}")
+                return result
+
+            if not result:
+                logger.warning(f"{name} attempt {attempt}/{MAX_SCRAPER_RETRIES} returned no cars")
+            else:
+                logger.info(f"{name} attempt {attempt}/{MAX_SCRAPER_RETRIES} returned {len(result)} cars")
+
         except Exception as e:
             logger.error(f"{name} attempt {attempt}/{MAX_SCRAPER_RETRIES} failed: {e}")
+            attempt_results.append({'cars': []})
             if attempt < MAX_SCRAPER_RETRIES:
                 logger.info(f"{name} retrying in {RETRY_DELAY}s...")
                 await asyncio.sleep(RETRY_DELAY)
             else:
                 logger.error(f"{name} FAILED after {MAX_SCRAPER_RETRIES} attempts\n{traceback.format_exc()}")
-    return []
+            continue
+
+        if attempt < MAX_SCRAPER_RETRIES:
+            logger.info(f"{name} retrying in {RETRY_DELAY}s...\n")
+            await asyncio.sleep(RETRY_DELAY)
+
+    consensus = choose_consensus_result(attempt_results)
+    if consensus is not attempt_results[-1]['cars']:
+        logger.info(f"{name} returning consensus result with {len(consensus)} cars")
+    return consensus
 
 
 async def main():
