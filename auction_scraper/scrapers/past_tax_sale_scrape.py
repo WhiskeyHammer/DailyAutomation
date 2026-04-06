@@ -29,12 +29,15 @@ PROXY_FILE = os.path.join(PROJECT_ROOT, "proxies.txt")
 
 # List of counties to scrape (county_name, calendar_url)
 # Clay goes first because it's a pain and may need manual intervention
-COUNTIES = [
+ALL_COUNTIES = [
     ("Clay", "https://clay.realtaxdeed.com/index.cfm?zaction=user&zmethod=calendar&selCalDate=%7Bts%20%272025%2D01%2D01%2000%3A00%3A00%27%7D"),
     ("Duval", "https://duval.realtaxdeed.com/index.cfm?zaction=user&zmethod=calendar&selCalDate=%7Bts%20%272025%2D01%2D01%2000%3A00%3A00%27%7D"),
     ("Nassau", "https://nassau.realtaxdeed.com/index.cfm?zaction=user&zmethod=calendar&selCalDate=%7Bts%20%272025%2D01%2D01%2000%3A00%3A00%27%7D"),
     ("Baker", "https://baker.realtaxdeed.com/index.cfm?zaction=user&zmethod=calendar&selCalDate=%7Bts%20%272025%2D01%2D01%2000%3A00%3A00%27%7D")
 ]
+
+_override = os.environ.get("OVERRIDE_COUNTY")
+COUNTIES = [(n, u) for n, u in ALL_COUNTIES if n == _override] if _override else ALL_COUNTIES
 
 # Generate timestamp for output files (down to the second)
 RUN_TIMESTAMP = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
@@ -241,13 +244,18 @@ async def collect_auction_dates_from_calendar(tab, calendar_url):
                 auction_dates.append(dayid)
                 logger.info(f"   Found auction date: {dayid}")
         
-        # Check stop condition: no auction days AND calendar is beyond current month
+        # Check stop condition: no auction days AND calendar is beyond current month,
+        # OR calendar is more than 3 months into the future (safety net)
         has_auction_days = len(auction_day_els) > 0
-        is_future_month = (cal_date.year > current_real_date.year or 
-                          (cal_date.year == current_real_date.year and cal_date.month > current_real_date.month))
-        
+        months_ahead = (cal_date.year - current_real_date.year) * 12 + (cal_date.month - current_real_date.month)
+        is_future_month = months_ahead > 0
+
         if not has_auction_days and is_future_month:
             logger.info(f"No auction days found and calendar ({cal_date_text}) is beyond current month. Stopping calendar scan.")
+            break
+
+        if months_ahead >= 3:
+            logger.info(f"Calendar ({cal_date_text}) is 3+ months ahead. Stopping calendar scan.")
             break
         
         # Click next month button with retry logic
@@ -303,15 +311,22 @@ def get_base_url(calendar_url):
 async def main():
     browser_args = ['--start-maximized']
 
+    # --- MONITOR POSITIONING ---
+    try:
+        from window_utils import get_chrome_window_args, move_chrome_to_vscode_monitor
+        browser_args.extend(get_chrome_window_args())
+    except ImportError:
+        move_chrome_to_vscode_monitor = None
+
     # --- PROXY CONFIGURATION ---
     # 1. Pick a random proxy from proxies.txt
     proxy_str = get_random_proxy(PROXY_FILE)
-    
+
     if proxy_str:
         print(f"Using Proxy for Auction Scrape: {proxy_str}")
         # 2. Define where the temp extension will live
         ext_path = os.path.join(SCRIPT_DIR, "chrome_proxy_auth_ext")
-        
+
         # 3. Create the extension files
         if create_proxy_auth_extension(proxy_str, ext_path):
             # 4. Load it into Chrome
@@ -320,7 +335,12 @@ async def main():
         print("No proxy found (or proxies.txt is missing). Running with Direct Connection.")
 
     browser = await n.start(browser_args=browser_args)
-    
+
+    # Move Chrome to the correct monitor after launch
+    if move_chrome_to_vscode_monitor:
+        await asyncio.sleep(1)
+        move_chrome_to_vscode_monitor()
+
     try:
         # Get initial tab
         tab = await browser.get("about:blank")

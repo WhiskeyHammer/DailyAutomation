@@ -1,4 +1,5 @@
 import asyncio
+import random
 import nodriver as n
 import csv
 import os
@@ -46,7 +47,7 @@ TEST_OVERRIDE = None
 # TEST_OVERRIDE = ("IGNORE_THIS_URL", "11/19/2025", "$18,900", "19-08-24-007802-044-00", "Clay")
 
 # Option B: Single County Override (set to None to process all counties)
-OVERRIDE_COUNTY = "Clay"
+OVERRIDE_COUNTY = os.environ.get("OVERRIDE_COUNTY")
 
 # --- COUNTY DEFINITIONS ---
 COUNTY_CONFIGS = {
@@ -84,7 +85,7 @@ COUNTY_CONFIGS = {
         "search_btn": "//section[.//*[contains(text(),'Search by Parcel Number with Sec/Twp/Rng')]]//a[@searchintent='ParcelID']",
         # Phrases that indicate wrong page - add phrases here to trigger retry
         "banned_phrases": [],
-        "failure_phrases": ["500 Results (Maximum)"],
+        "failure_phrases": ["500 Results (Maximum)", "403 Forbidden", "we apologize for the inconvenience"],
         # ----------------------------------
         "wait_target": "//*[text()='Valuation']",
         "xp_val_bldg": '//table[contains(@class,"table")]//tr[contains(.,"Building Value")]/td[2]',
@@ -147,51 +148,57 @@ async def wait_for_xpath(page, xpath, attempts, pause_length):
     raise Exception("Element not found")        
 
 
-async def get_to_parcel_page(config, browser, pid, url, agree_clicked=False):
+async def get_to_parcel_page(config, browser, pid, url, agree_clicked=False, search_page=None):
     """
-    Navigate to a parcel page. Returns (page, agree_clicked, needs_manual_review).
+    Navigate to a parcel page. Returns (page, agree_clicked, needs_manual_review, search_page).
     If needs_manual_review is True, the page contains banned phrases and should be skipped.
+    For search-based counties (Clay), reuses the search page instead of reloading it each time.
     """
     max_retries = 10
     banned_phrases = config.get("banned_phrases", [])
     failure_phrases = config.get("failure_phrases", [])
-    
+
     for attempt in range(max_retries):
         try:
             if "search_url" in config:
-                page = await browser.get(config['search_url'])
-                await force_active_session(page)
-                
-                # 1. Handle 'Agree' button (common on search pages) - only if not already clicked
-                if 'click_agree' in config and not agree_clicked:
-                    await wait_for_xpath(page, config['click_agree'], 10, 1)
+                # Only load the search page if we don't have one yet (first property or after error)
+                if search_page is None or attempt > 0:
+                    search_page = await browser.get(config['search_url'])
+                    await force_active_session(search_page)
 
-                    btn = await page.xpath(config['click_agree'])
-                    await btn[0].click()
-                    agree_clicked = True
-                    print("  -> Agree button clicked, will skip on future runs")
-                    await asyncio.sleep(1)
+                    # Handle 'Agree' button - only if not already clicked
+                    if 'click_agree' in config and not agree_clicked:
+                        await wait_for_xpath(search_page, config['click_agree'], 10, 1)
+                        btn = await search_page.xpath(config['click_agree'])
+                        await btn[0].click()
+                        agree_clicked = True
+                        print("  -> Agree button clicked, will skip on future runs")
+                        await asyncio.sleep(random.uniform(1, 2))
+                else:
+                    # Navigate back to search page without full reload
+                    await search_page.back()
+                    await asyncio.sleep(random.uniform(1.5, 3))
 
-                # 2. Find Input & Type PID
-                await wait_for_xpath(page, config['search_input_xpath'], 10, 1)
-                await asyncio.sleep(1)
-                input_el = await page.xpath(config['search_input_xpath'])
+                # Find Input & Type PID
+                await wait_for_xpath(search_page, config['search_input_xpath'], 10, 1)
+                await asyncio.sleep(random.uniform(0.5, 1.5))
+                input_el = await search_page.xpath(config['search_input_xpath'])
                 if input_el:
-                    # Clear the input first
                     await input_el[0].clear_input()
-                    await asyncio.sleep(0.3)
+                    await asyncio.sleep(random.uniform(0.3, 0.8))
                     await input_el[0].send_keys(pid)
-                    
-                    # Wait for the specific search button to be present before clicking
-                    await wait_for_xpath(page, config["search_btn"], 10, 1)
-                    await asyncio.sleep(0.5)  # Let page fully stabilize
-                    search_btn = await page.xpath(config["search_btn"])
+
+                    await wait_for_xpath(search_page, config["search_btn"], 10, 1)
+                    await asyncio.sleep(random.uniform(0.5, 1.5))
+                    search_btn = await search_page.xpath(config["search_btn"])
                     await search_btn[0].scroll_into_view()
-                    await asyncio.sleep(0.3)
+                    await asyncio.sleep(random.uniform(0.3, 0.8))
                     await search_btn[0].click()
-                    await asyncio.sleep(1)
+                    await asyncio.sleep(random.uniform(1, 2))
                 else:
                     raise Exception(f"Critical: Search input not found for {pid}")
+
+                page = search_page
             else:
                 # >>> STANDARD WORKFLOW (Direct URL) >>>
                 page = await browser.get(url)
@@ -219,20 +226,21 @@ async def get_to_parcel_page(config, browser, pid, url, agree_clicked=False):
             await wait_for_xpath(page, config['wait_target'], 10, 1)
             await asyncio.sleep(1.5)
             
-            return page, agree_clicked, False  # needs_manual_review = False
-            
+            return page, agree_clicked, False, search_page
+
         except Exception as e:
             if attempt < max_retries - 1:
                 print(f"  -> Failed to load property page (attempt {attempt + 1}/{max_retries}), retrying...")
                 await asyncio.sleep(1)
+                search_page = None  # Force full reload on retry
                 continue
             # All retries exhausted - mark for manual review instead of crashing
             print(f"  -> FAILED after {max_retries} attempts - marking for manual review")
-            return None, agree_clicked, True  # needs_manual_review = True
-    
+            return None, agree_clicked, True, None
+
     # Should not reach here, but just in case
     print(f"  -> FAILED to navigate to property page for {pid} - marking for manual review")
-    return None, agree_clicked, True
+    return None, agree_clicked, True, None
 
 async def force_active_session(page):
     """
@@ -317,13 +325,19 @@ async def parse_property(page_html, url, date_str, price_str, pid, config):
     return found_rows
 
 async def process_county_batch(browser, county_name, tasks):
+    """
+    Process all properties for a county. For Clay, rotates proxy every
+    CLAY_PROXY_ROTATE_EVERY properties to avoid rate-limiting.
+    Returns the (possibly new) browser instance.
+    """
     config = COUNTY_CONFIGS.get(county_name)
     if not config:
         print(f"Skipping unknown county: {county_name}")
-        return
+        return browser
 
-    # Track if we've already clicked the Agree button for this county
     agree_clicked = False
+    search_page = None
+    since_rotate = 0
 
     output_file = config['output_file']
     print(f"\n--- Starting {county_name} ({len(tasks)} properties) -> {output_file} ---")
@@ -331,18 +345,42 @@ async def process_county_batch(browser, county_name, tasks):
     with open(output_file, 'w', newline='', encoding='utf-8') as f:
         writer = csv.writer(f)
         writer.writerow([
-            "URL", "Parcel ID", "Tax Deed Date", "Tax Deed Price", 
-            "Bldg Value", "Land Value", 
+            "URL", "Parcel ID", "Tax Deed Date", "Tax Deed Price",
+            "Bldg Value", "Land Value",
             "FLIP Date", "FLIP Price", "Instrument", "Qualified", "Vacant/Imp"
         ])
 
-        for url, date, price, pid in tasks:
-            page, agree_clicked, needs_manual_review = await get_to_parcel_page(config, browser, pid, url, agree_clicked)
+        # Verify proxy on first launch for Clay
+        if county_name == "Clay":
+            ip = await verify_proxy(browser)
+            if ip:
+                print(f"  [PROXY] Starting Clay with external IP: {ip}")
+            else:
+                print(f"  [WARNING] Could not verify proxy — proceeding anyway")
+
+        for i, (url, date, price, pid) in enumerate(tasks):
+            # Rotate proxy for Clay every N properties
+            if county_name == "Clay" and since_rotate >= CLAY_PROXY_ROTATE_EVERY:
+                print(f"\n  >> Rotating proxy (after {since_rotate} properties)...")
+                browser.stop()
+                await asyncio.sleep(2)
+                browser = await launch_browser()
+                agree_clicked = False
+                search_page = None
+                since_rotate = 0
+
+                # Verify the new proxy is actually working
+                new_ip = await verify_proxy(browser)
+                if new_ip:
+                    print(f"  [PROXY] New external IP: {new_ip}")
+                else:
+                    print(f"  [WARNING] Proxy verification failed — proceeding anyway")
+
+            page, agree_clicked, needs_manual_review, search_page = await get_to_parcel_page(config, browser, pid, url, agree_clicked, search_page)
 
             if needs_manual_review:
-                # Write partial row with only basic info for manual review
                 writer.writerow([
-                    url, pid, date, price, 
+                    url, pid, date, price,
                     "MANUAL REVIEW", "MANUAL REVIEW",
                     "MANUAL REVIEW", "MANUAL REVIEW", "MANUAL REVIEW", "MANUAL REVIEW", "MANUAL REVIEW"
                 ])
@@ -350,11 +388,9 @@ async def process_county_batch(browser, county_name, tasks):
                 await asyncio.sleep(1)
                 continue
 
-            # 3. Parse
             content = await page.get_content()
             results = await parse_property(content, url, date, price, pid, config)
 
-            # 4. Log & Write
             flips_count = sum(1 for r in results if r[6] != "N/A")
             if flips_count:
                 print(f"  -> FOUND {flips_count} NEW SALE(S)!")
@@ -363,14 +399,34 @@ async def process_county_batch(browser, county_name, tasks):
 
             writer.writerows(results)
             f.flush()
-            await asyncio.sleep(1)
+            since_rotate += 1
+
+            if county_name == "Clay":
+                await asyncio.sleep(random.uniform(3, 7))
+            else:
+                await asyncio.sleep(1)
+
+    return browser
 
 # --- 4. MAIN ---
 
-async def main():
+# How many properties to process before rotating proxy (Clay only)
+CLAY_PROXY_ROTATE_EVERY = 5
+
+try:
+    from window_utils import get_chrome_window_args, move_chrome_to_vscode_monitor
+except ImportError:
+    get_chrome_window_args = None
+    move_chrome_to_vscode_monitor = None
+
+
+async def launch_browser():
+    """Launch a fresh browser with a random proxy and correct monitor position."""
     browser_args = ['--start-maximized']
 
-    # --- PROXY INJECTION ---
+    if get_chrome_window_args:
+        browser_args.extend(get_chrome_window_args())
+
     proxy_str = get_random_proxy(PROXY_FILE)
     if proxy_str:
         print(f"Using Proxy: {proxy_str}")
@@ -379,9 +435,30 @@ async def main():
             browser_args.append(f"--load-extension={ext_path}")
     else:
         print("No proxy found (or proxies.txt is missing). Running with Direct Connection.")
-    # -----------------------
 
     browser = await n.start(browser_args=browser_args)
+
+    if move_chrome_to_vscode_monitor:
+        await asyncio.sleep(1)
+        move_chrome_to_vscode_monitor()
+
+    return browser
+
+
+async def verify_proxy(browser):
+    """Check external IP and return it. Returns None on failure."""
+    try:
+        tab = await browser.get("https://api.ipify.org")
+        await asyncio.sleep(2)
+        ip = (await tab.evaluate("document.body.innerText")).strip()
+        return ip
+    except Exception as e:
+        print(f"  [PROXY CHECK FAILED] {e}")
+        return None
+
+
+async def main():
+    browser = await launch_browser()
 
     county_tasks = {k: [] for k in COUNTY_CONFIGS.keys()}
 
@@ -424,7 +501,7 @@ async def main():
     
     for county in COUNTY_ORDER:
         if county in county_tasks and county_tasks[county]:
-            await process_county_batch(browser, county, county_tasks[county])
+            browser = await process_county_batch(browser, county, county_tasks[county])
 
     # browser.stop()
 

@@ -7,11 +7,14 @@ from datetime import datetime
 
 # --- CONFIGURATION ---
 
+# Set to a county name (e.g. "Clay") to only run that county, or None for all
+OVERRIDE_COUNTY = None
+
 # Define the scripts to run in order
 SCRIPTS = {
-    "Step 1 (Auctions)": "history/past_tax_sale_scrape.py",
-    "Step 2 (Parcel History)": "history/parcel_history_scrape.py",
-    "Step 3 (Verify)": "history/verify_sale_flip_scrape_alignment.py"
+    "Step 1 (Auctions)": "scrapers/past_tax_sale_scrape.py",
+    "Step 2 (Parcel History)": "scrapers/parcel_history_scrape.py",
+    "Step 3 (Verify)": "scrapers/verify_sale_flip_scrape_alignment.py"
 }
 
 # Generate timestamp for output files (down to the second)
@@ -51,11 +54,16 @@ def run_script(step_name, script_path_relative):
 
     try:
         # Run the script using the same Python interpreter executing this runner
+        env = os.environ.copy()
+        if OVERRIDE_COUNTY:
+            env["OVERRIDE_COUNTY"] = OVERRIDE_COUNTY
+
         result = subprocess.run(
             [sys.executable, script_path],
             check=True,  # Raises CalledProcessError if script fails
             text=True,
-            capture_output=False # Stream output directly to console
+            capture_output=False, # Stream output directly to console
+            env=env
         )
         
         elapsed = time.time() - start_time
