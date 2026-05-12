@@ -14,6 +14,11 @@ logger = logging.getLogger(__name__)
 from sam_contracts.sam_db import TursoClient
 from junkyard_scraper.ace_scrape import scrape_ace_inventory
 from junkyard_scraper.go_scraper import scrape_gopullit_inventory
+from junkyard_scraper.budget_scraper import scrape_budget_inventory
+from junkyard_scraper.central_florida_scraper import scrape_centralflorida_inventory
+from junkyard_scraper.pyp_scraper import scrape_pyp_inventory
+from junkyard_scraper.upullandpay_scraper import scrape_upullandpay_inventory
+from junkyard_scraper.usedautopartsfl_scraper import scrape_usedautopartsfl_inventory
 from browser_config import BROWSER_ARGS, HEADLESS
 
 MAX_SCRAPER_RETRIES = 3
@@ -180,8 +185,73 @@ async def main():
     
     for c in go_cars:
         c['yard'] = 'GO'
-        
-    all_cars = ace_cars + go_cars
+
+    # --- Budget U Pull It scraper (with retry) ---
+    budget_cars = await scrape_with_retry(
+        "Budget U Pull It scraper",
+        scrape_budget_inventory,
+        headless=HEADLESS,
+        browser_args=BROWSER_ARGS,
+    )
+    logger.info(f"Budget U Pull It scraper returned {len(budget_cars)} cars")
+
+    for c in budget_cars:
+        c['yard'] = 'Budget'
+
+    # --- Central Florida Pick and Pay scraper (with retry) ---
+    central_fl_cars = await scrape_with_retry(
+        "Central Florida Pick and Pay scraper",
+        scrape_centralflorida_inventory,
+        headless=HEADLESS,
+        browser_args=BROWSER_ARGS,
+    )
+    logger.info(f"Central Florida Pick and Pay scraper returned {len(central_fl_cars)} cars")
+
+    for c in central_fl_cars:
+        c['yard'] = 'CentralFL'
+
+    # --- Pick Your Parts scraper (with retry) ---
+    pyp_cars = await scrape_with_retry(
+        "Pick Your Parts scraper",
+        scrape_pyp_inventory,
+        headless=HEADLESS,
+        browser_args=BROWSER_ARGS,
+    )
+    logger.info(f"Pick Your Parts scraper returned {len(pyp_cars)} cars")
+
+    for c in pyp_cars:
+        c['yard'] = 'PYP'
+
+    # --- U Pull and Pay scraper (with retry) ---
+    upullandpay_cars = await scrape_with_retry(
+        "U Pull and Pay scraper",
+        scrape_upullandpay_inventory,
+        make="DODGE",
+        model="DAKOTA",
+        min_year=1987,
+        max_year=1996,
+        location_id=34,
+        headless=HEADLESS,
+        browser_args=BROWSER_ARGS,
+    )
+    logger.info(f"U Pull and Pay scraper returned {len(upullandpay_cars)} cars")
+
+    for c in upullandpay_cars:
+        c['yard'] = 'UPullAndPay'
+
+    # --- Used Auto Parts FL scraper (with retry) ---
+    usedautopartsfl_cars = await scrape_with_retry(
+        "Used Auto Parts FL scraper",
+        scrape_usedautopartsfl_inventory,
+        headless=HEADLESS,
+        browser_args=BROWSER_ARGS,
+    )
+    logger.info(f"Used Auto Parts FL scraper returned {len(usedautopartsfl_cars)} cars")
+
+    for c in usedautopartsfl_cars:
+        c['yard'] = 'UsedAutoPartsFL'
+
+    all_cars = ace_cars + go_cars + budget_cars + central_fl_cars + pyp_cars + upullandpay_cars + usedautopartsfl_cars
     logger.info(f"Total cars scraped: {len(all_cars)} (Ace={len(ace_cars)}, GO={len(go_cars)})")
     
     new_cars = []

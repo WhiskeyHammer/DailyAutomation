@@ -4,3 +4,4 @@ koyeb
 backup_*
 .env
 *.json
+node_modules/
