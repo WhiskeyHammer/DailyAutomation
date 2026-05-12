@@ -84,7 +84,7 @@ async def scrape_gopullit_inventory(
     inventory_url = f"https://gopullit.com/inventory/?location={location}&make={make}&model={model}"
     
     logger.info(f"[GO] Starting browser...")
-    browser = await uc.start(headless=headless, browser_args=browser_args or [])
+    browser = await uc.start(headless=headless, browser_args=browser_args or [], no_sandbox=True)
     logger.info(f"[GO] Browser started OK")
     
     try:

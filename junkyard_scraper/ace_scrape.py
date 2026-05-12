@@ -36,7 +36,7 @@ async def scrape_ace_inventory(
     url = f"https://acepickapart.com/search-inventory/?make={make}&model={model}"
     
     # Start browser
-    browser = await uc.start(headless=headless, browser_args=browser_args or [])
+    browser = await uc.start(headless=headless, browser_args=browser_args or [], no_sandbox=True)
     
     try:
         # Navigate to the page

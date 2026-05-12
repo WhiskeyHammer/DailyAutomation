@@ -79,7 +79,7 @@ async def scrape_details(urls, headless=False, browser_args=None):
     Launches one browser session, visits each URL in sequence,
     and returns a list of result dicts.
     """
-    browser = await uc.start(headless=headless, browser_args=browser_args or [])
+    browser = await uc.start(headless=headless, browser_args=browser_args or [], no_sandbox=True)
     page = await browser.get("about:blank")
 
     results = []

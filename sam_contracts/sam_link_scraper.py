@@ -185,7 +185,7 @@ async def scrape_index(headless=False, browser_args=None):
     all_rows = []
 
     logger.info("Launching browser …")
-    browser = await uc.start(headless=headless, browser_args=browser_args or [])
+    browser = await uc.start(headless=headless, browser_args=browser_args or [], no_sandbox=True)
 
     logger.info(f"Navigating to SAM.gov search …")
     page = await browser.get(START_URL)

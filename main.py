@@ -47,7 +47,7 @@ WORKOUT_URL = "https://workout-tracker-hxg5.onrender.com/"
 async def check_workout_site():
     browser = None
     try:
-        browser = await uc.start(headless=HEADLESS, browser_args=BROWSER_ARGS)
+        browser = await uc.start(headless=HEADLESS, browser_args=BROWSER_ARGS, no_sandbox=True)
         tab = await browser.get(WORKOUT_URL)
         logger.info(f"Checking {WORKOUT_URL} …")
         pw = await tab.select('input[type="password"]', timeout=15)
