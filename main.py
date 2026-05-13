@@ -13,9 +13,9 @@ import sys
 import time
 
 import nodriver as uc
+import requests
 from dotenv import load_dotenv
 
-from browser_config import BROWSER_ARGS, HEADLESS
 from sam_contracts.master_sam import run_sam_pipeline
 from junkyard_scraper.master_junkyard import main as run_junkyard_pipeline
 
@@ -33,9 +33,9 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Timeouts (seconds) — prevents hung browsers from blocking the loop forever
 # ---------------------------------------------------------------------------
-SAM_TIMEOUT = 900       # 15 minutes
+SAM_TIMEOUT = 1800      # 30 minutes — full 7-page scrape takes ~17 min
 JUNKYARD_TIMEOUT = 600  # 10 minutes
-WORKOUT_TIMEOUT = 120   # 2 minutes
+WORKOUT_TIMEOUT = 30    # 30 seconds — plain HTTP GET, no browser
 
 
 # ---------------------------------------------------------------------------
@@ -45,21 +45,11 @@ WORKOUT_URL = "https://workout-tracker-hxg5.onrender.com/"
 
 
 async def check_workout_site():
-    browser = None
     try:
-        browser = await uc.start(headless=HEADLESS, browser_args=BROWSER_ARGS, no_sandbox=True)
-        tab = await browser.get(WORKOUT_URL)
-        logger.info(f"Checking {WORKOUT_URL} …")
-        pw = await tab.select('input[type="password"]', timeout=15)
-        if pw:
-            logger.info("Workout tracker: login screen visible ✓")
-        else:
-            logger.warning("Workout tracker: password field NOT found")
+        resp = await asyncio.to_thread(requests.get, WORKOUT_URL, timeout=10)
+        logger.info(f"Workout tracker: HTTP {resp.status_code} ({len(resp.content)} bytes)")
     except Exception as e:
         logger.error(f"Workout tracker error: {e}")
-    finally:
-        if browser:
-            browser.stop()
 
 
 # ---------------------------------------------------------------------------
