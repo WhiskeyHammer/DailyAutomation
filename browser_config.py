@@ -1,8 +1,14 @@
 """
 Shared browser configuration for all nodriver scrapers.
-Single source of truth for headless Chrome settings.
+Single source of truth for headless Chrome settings in containerized environments.
 """
 
-BROWSER_ARGS = []
+BROWSER_ARGS = [
+    "--no-sandbox",
+    "--disable-setuid-sandbox",
+    "--disable-dev-shm-usage",
+    "--disable-gpu",
+    "--disable-software-rasterizer",
+]
 
-HEADLESS = False
+HEADLESS = True
